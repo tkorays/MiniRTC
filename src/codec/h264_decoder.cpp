@@ -419,6 +419,10 @@ CodecError H264Decoder::DestroyDecoder() {
     packet_ = nullptr;
   }
   if (context_) {
+    if (context_->extradata) {
+      av_free(context_->extradata);
+      context_->extradata = nullptr;
+    }
     avcodec_free_context(&context_);
     context_ = nullptr;
   }

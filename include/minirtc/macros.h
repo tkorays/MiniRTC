@@ -22,7 +22,7 @@
 
 /* Min/Max */
 #define MINIRTC_MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MAXIRTC_MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MINIRTC_MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 /* Stringify */
 #define MINIRTC_STRINGIFY(x) #x
