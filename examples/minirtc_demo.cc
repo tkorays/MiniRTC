@@ -1267,6 +1267,7 @@ int main(int argc, char* argv[]) {
     // 设置RTP Transport回调 (Loopback模式使用内部接收)
     std::shared_ptr<IRtpTransportCallback> rtp_callback;
     std::atomic<bool> jitter_thread_running{false};
+    std::shared_ptr<IBandwidthEstimator> bwe_estimator;  // 带宽估计器
     if (mode == "loopback" && g_rtp_transport && g_audio_jitter_buffer && g_video_jitter_buffer) {
         // 创建回调类来处理接收的RTP包 (需要继承IRtpTransportCallback以支持dynamic_cast)
         class RtpRecvCallback : public IRtpTransportCallback {
@@ -1381,7 +1382,7 @@ int main(int argc, char* argv[]) {
         
         // 创建并初始化带宽估计器
         std::cout << "[BWE] 创建带宽估计器..." << std::endl;
-        auto bwe_estimator = CreateBandwidthEstimator();
+        bwe_estimator = CreateBandwidthEstimator();
         BweConfig bwe_config;
         bwe_config.min_bitrate_bps = 30000;      // 最小码率 30kbps
         bwe_config.max_bitrate_bps = 3000000;    // 最大码率 3Mbps
