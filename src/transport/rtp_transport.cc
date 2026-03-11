@@ -150,11 +150,8 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
   }
 
   // Serialize if needed (after setting SSRC/seq)
-  fprintf(stderr, "[RTPTransport] SendRtpPacket: packet size=%zu before serialize\n", packet->GetSize());
-  if (packet->GetSize() == 0) {
-    packet->Serialize();
-    fprintf(stderr, "[RTPTransport] SendRtpPacket: packet serialized, new size=%zu\n", packet->GetSize());
-  }
+  // Always serialize to ensure buffer is correctly populated
+  packet->Serialize();
 
   // Loopback mode: put packet in local queue for receiving
   if (loopback_mode_.load()) {

@@ -1381,15 +1381,15 @@ int main(int argc, char* argv[]) {
         
         // 创建并初始化带宽估计器
         std::cout << "[BWE] 创建带宽估计器..." << std::endl;
-        g_bandwidth_estimator = CreateBandwidthEstimator();
+        auto bwe_estimator = CreateBandwidthEstimator();
         BweConfig bwe_config;
         bwe_config.min_bitrate_bps = 30000;      // 最小码率 30kbps
         bwe_config.max_bitrate_bps = 3000000;    // 最大码率 3Mbps
         bwe_config.start_bitrate_bps = 500000;  // 初始码率 500kbps
         bwe_config.feedback_interval_ms = 100;  // 反馈间隔
         bwe_config.rtt_filter_ms = 200;         // RTT滤波
-        g_bandwidth_estimator->Initialize(bwe_config);
-        callback->bandwidth_estimator = g_bandwidth_estimator;
+        bwe_estimator->Initialize(bwe_config);
+        callback->bandwidth_estimator = bwe_estimator;
         
         std::cout << "[BWE] 带宽估计器已初始化 (初始码率: " << bwe_config.start_bitrate_bps / 1000 << " kbps)" << std::endl;
         
