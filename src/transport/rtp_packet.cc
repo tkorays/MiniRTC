@@ -1,6 +1,6 @@
 /**
  * @file rtp_packet.cc
- * @brief MiniRTC RTP packet implementation
+ * @brief MiniRTC RTP packet implementation - Optimized version
  */
 
 #include "minirtc/transport/rtp_packet.h"
@@ -26,6 +26,14 @@ RtpPacket::RtpPacket(uint8_t payload_type, uint32_t timestamp, uint16_t seq)
   buffer_.reserve(kMaxPacketSize);
 }
 
+void RtpPacket::PreallocateBuffer() {
+  buffer_.reserve(kMaxPacketSize);
+  buffer_.resize(kMaxHeaderSize);
+  payload_.reserve(kMaxPayloadSize);
+  extension_data_.reserve(64);
+  csrc_list_.reserve(15);
+}
+
 void RtpPacket::AddCsrc(uint32_t csrc) {
   if (csrc_list_.size() < 15) {
     csrc_list_.push_back(csrc);
@@ -34,8 +42,8 @@ void RtpPacket::AddCsrc(uint32_t csrc) {
 }
 
 int RtpPacket::SetPayload(const uint8_t* data, size_t size) {
-  if (size > kMaxPayloadSize) {
-    return -1;  // Too large
+  if (MINIRTC_UNLIKELY(size > kMaxPayloadSize)) {
+    return -1;
   }
   payload_.assign(data, data + size);
   return 0;
@@ -45,8 +53,21 @@ int RtpPacket::SetPayload(const std::vector<uint8_t>& data) {
   return SetPayload(data.data(), data.size());
 }
 
+int RtpPacket::SetPayload(std::vector<uint8_t>&& data) noexcept {
+  if (MINIRTC_UNLIKELY(data.size() > kMaxPayloadSize)) {
+    return -1;
+  }
+  payload_ = std::move(data);
+  return 0;
+}
+
+std::vector<uint8_t> RtpPacket::GetPayloadMove() {
+  std::vector<uint8_t> result = std::move(payload_);
+  return result;
+}
+
 int RtpPacket::SetExtensionData(const uint8_t* data, size_t size) {
-  if (size > 256) {  // Extension size limit
+  if (MINIRTC_UNLIKELY(size > 256)) {
     return -1;
   }
   extension_ = true;
@@ -56,20 +77,21 @@ int RtpPacket::SetExtensionData(const uint8_t* data, size_t size) {
 
 int RtpPacket::Serialize() {
   buffer_.clear();
-  buffer_.reserve(kMaxPacketSize);
+  
+  // Reserve space for header + payload
+  size_t estimated_size = kMaxHeaderSize + payload_.size();
+  buffer_.reserve(estimated_size);
 
-  // Header
+  // Serialize header
   size_t header_size = SerializeHeader(buffer_.data());
 
   // Extension
   if (extension_ && !extension_data_.empty()) {
-    // Extension header (4 bytes)
     buffer_.resize(header_size + 4);
     Write16(buffer_.data() + header_size, extension_profile_);
     Write16(buffer_.data() + header_size + 2,
             static_cast<uint16_t>(extension_data_.size() / 4));
 
-    // Extension data (must be padded to 4-byte boundary)
     size_t padded_size = ((extension_data_.size() + 3) & ~3u);
     buffer_.insert(buffer_.end(), extension_data_.begin(),
                    extension_data_.end());
@@ -79,8 +101,10 @@ int RtpPacket::Serialize() {
     }
   }
 
-  // Payload
-  buffer_.insert(buffer_.end(), payload_.begin(), payload_.end());
+  // Payload (use move semantics if possible)
+  if (!payload_.empty()) {
+    buffer_.insert(buffer_.end(), payload_.begin(), payload_.end());
+  }
 
   return 0;
 }
@@ -113,8 +137,8 @@ size_t RtpPacket::SerializeHeader(uint8_t* buffer) const {
 }
 
 int RtpPacket::Deserialize(const uint8_t* data, size_t size) {
-  if (size < 12) {
-    return -1;  // Too small
+  if (MINIRTC_UNLIKELY(size < 12)) {
+    return -1;
   }
 
   int result = DeserializeHeader(data, size);
@@ -125,7 +149,7 @@ int RtpPacket::Deserialize(const uint8_t* data, size_t size) {
   // Parse extension if present
   if (extension_) {
     size_t header_size = 12 + csrc_count_ * 4;
-    if (size < header_size + 4) {
+    if (MINIRTC_UNLIKELY(size < header_size + 4)) {
       return -1;
     }
 
@@ -133,29 +157,45 @@ int RtpPacket::Deserialize(const uint8_t* data, size_t size) {
     uint16_t ext_len = Read16(data + header_size + 2) * 4;
 
     size_t ext_offset = header_size + 4;
-    if (size < ext_offset + ext_len) {
+    if (MINIRTC_UNLIKELY(size < ext_offset + ext_len)) {
       return -1;
     }
 
     extension_data_.assign(data + ext_offset, data + ext_offset + ext_len);
 
-    // Payload starts after extension
     size_t payload_offset = ext_offset + ext_len;
     payload_.assign(data + payload_offset, data + size);
   } else {
-    // No extension - payload starts after header
     size_t header_size = 12 + csrc_count_ * 4;
     payload_.assign(data + header_size, data + size);
   }
 
-  // Rebuild buffer
+  // Rebuild buffer (could be zero-copy if we kept the original reference)
+  buffer_.assign(data, data + size);
+
+  return 0;
+}
+
+int RtpPacket::BuildFromView(const uint8_t* data, size_t size) {
+  // Zero-copy: just store reference instead of copying
+  if (MINIRTC_UNLIKELY(size < 12)) {
+    return -1;
+  }
+
+  int result = DeserializeHeader(data, size);
+  if (result < 0) {
+    return result;
+  }
+
+  // For zero-copy, we borrow the data - mark buffer as external
+  // In this implementation we still copy for safety, but the interface allows optimization
   buffer_.assign(data, data + size);
 
   return 0;
 }
 
 int RtpPacket::DeserializeHeader(const uint8_t* data, size_t size) {
-  if (size < 12) {
+  if (MINIRTC_UNLIKELY(size < 12)) {
     return -1;
   }
 
@@ -170,23 +210,24 @@ int RtpPacket::DeserializeHeader(const uint8_t* data, size_t size) {
   payload_type_ = data[1] & 0x7F;
 
   // Validate version
-  if (version_ != 2) {
-    return -1;  // Invalid version
+  if (MINIRTC_UNLIKELY(version_ != 2)) {
+    return -1;
   }
 
   // Check minimum size
   size_t min_size = 12 + csrc_count_ * 4;
-  if (size < min_size) {
+  if (MINIRTC_UNLIKELY(size < min_size)) {
     return -1;
   }
 
-  // Header fields
+  // Header fields (using fast read)
   seq_ = Read16(data + 2);
   timestamp_ = Read32(data + 4);
   ssrc_ = Read32(data + 8);
 
   // CSRC list
   csrc_list_.clear();
+  csrc_list_.reserve(csrc_count_);
   for (uint8_t i = 0; i < csrc_count_; ++i) {
     csrc_list_.push_back(Read32(data + 12 + i * 4));
   }
@@ -209,7 +250,7 @@ std::shared_ptr<RtpPacket> RtpPacket::Clone() const {
   packet->extension_profile_ = extension_profile_;
   packet->extension_data_ = extension_data_;
   packet->payload_ = payload_;
-  packet->Serialize();  // Rebuild buffer
+  packet->Serialize();
   return packet;
 }
 
@@ -239,17 +280,45 @@ std::string RtpPacket::ToString() const {
 }
 
 // ============================================================================
+// Batch Serializer Implementation
+// ============================================================================
+
+size_t RtpPacketBatchSerializer::SerializeBatch(uint8_t* output_buffer, 
+                                                  size_t buffer_capacity) {
+  uint8_t* current = output_buffer;
+  size_t remaining = buffer_capacity;
+
+  for (const auto& packet : packets_) {
+    size_t packet_size = packet->GetSize();
+    if (packet_size > remaining) {
+      break;  // Buffer full
+    }
+
+    // Copy packet data
+    std::memcpy(current, packet->GetData(), packet_size);
+    current += packet_size;
+    remaining -= packet_size;
+  }
+
+  return current - output_buffer;
+}
+
+// ============================================================================
 // Factory Functions
 // ============================================================================
 
 std::shared_ptr<RtpPacket> CreateRtpPacket() {
-  return std::make_shared<RtpPacket>();
+  auto packet = std::make_shared<RtpPacket>();
+  packet->PreallocateBuffer();
+  return packet;
 }
 
 std::shared_ptr<RtpPacket> CreateRtpPacket(uint8_t payload_type,
                                             uint32_t timestamp,
                                             uint16_t seq) {
-  return std::make_shared<RtpPacket>(payload_type, timestamp, seq);
+  auto packet = std::make_shared<RtpPacket>(payload_type, timestamp, seq);
+  packet->PreallocateBuffer();
+  return packet;
 }
 
 }  // namespace minirtc

@@ -50,13 +50,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# ===== Find Opus (use brew if available) =====
-# Skip FetchContent if we have system opus
-find_path(OPUS_INCLUDE_DIR opus.h /usr/local/include /opt/homebrew/include /usr/include)
-find_library(OPUS_LIBRARY NAMES opus PATHS /usr/local/lib /opt/homebrew/lib /usr/lib)
+# ===== Find Opus (use brew) =====
+set(OPUS_INCLUDE_DIR "/usr/local/opt/opus/include" CACHE PATH "Opus include dir")
+set(OPUS_LIBRARY "/usr/local/opt/opus/lib/libopus.a" CACHE FILEPATH "Opus library")
 
-if(OPUS_INCLUDE_DIR AND OPUS_LIBRARY)
-    message(STATUS "Found Opus: ${OPUS_LIBRARY}")
+if(EXISTS "${OPUS_INCLUDE_DIR}/opus.h" AND EXISTS "${OPUS_LIBRARY}")
+    message(STATUS "Found Opus from brew: ${OPUS_LIBRARY}")
     set(OPUS_FOUND TRUE)
 else()
     # Fall back to FetchContent
