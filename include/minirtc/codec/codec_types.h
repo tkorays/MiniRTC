@@ -12,9 +12,13 @@
 #include <vector>
 #include <functional>
 
+// Use shared types from capture_render_types
+#include "minirtc/capture_render_types.h"
+
 namespace minirtc {
 
-/// Codec type enumeration
+// Remove duplicate enum definitions - using capture_render_types.h versions
+// VideoPixelFormat and AudioSampleFormat are now defined in capture_render_types.h
 enum class CodecType {
   kNone = 0,
   // Audio codecs
@@ -64,26 +68,7 @@ enum class BitrateControl {
   kVBRHQ = 3,     // High quality variable bitrate
 };
 
-/// Video pixel format
-enum class VideoPixelFormat {
-  kI420 = 0,
-  kNV12 = 1,
-  kNV21 = 2,
-  kBGRA = 3,
-  kRGBA = 4,
-  kYUY2 = 5,
-  kMJPEG = 6,
-};
-
-/// Audio sample format
-enum class AudioSampleFormat {
-  kS16 = 0,       // 16-bit signed integer
-  kS16LE = 0,     // 16-bit little endian
-  kS16BE = 1,     // 16-bit big endian
-  kF32 = 2,       // 32-bit float
-  kF32LE = 2,     // 32-bit little endian float
-  kF32BE = 3,     // 32-bit big endian float
-};
+// Use VideoPixelFormat and AudioSampleFormat from capture_render_types.h
 
 /// Codec error code
 enum class CodecError {
@@ -115,7 +100,7 @@ struct AudioFrameInfo {
   uint32_t sample_rate = 48000;
   uint32_t channels = 2;
   uint32_t samples_per_channel = 0;
-  AudioSampleFormat format = AudioSampleFormat::kS16;
+  AudioSampleFormat format = AudioSampleFormat::kInt16;
   uint64_t timestamp_us = 0;
   bool speech = false;               // Is speech signal
   bool music = false;                // Is music signal

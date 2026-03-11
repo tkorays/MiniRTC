@@ -265,3 +265,24 @@ target_include_directories(minirtc_memory_pool_test PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 add_test(NAME minirtc_memory_pool_test COMMAND minirtc_memory_pool_test)
+
+# ============================================================================
+# Full E2E Tests
+# ============================================================================
+
+# Full E2E tests (audio + video pipeline)
+add_executable(minirtc_e2e_full_test 
+    integration/test_e2e_full.cc 
+    common/test_network_emulator.cc
+)
+target_link_libraries(minirtc_e2e_full_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_e2e_full_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/common
+)
+add_test(NAME minirtc_e2e_full_test COMMAND minirtc_e2e_full_test)

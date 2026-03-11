@@ -66,7 +66,7 @@ struct AudioDecoderConfig : public ICodecConfig {
   uint32_t channels = 2;
   
   // Output format
-  AudioSampleFormat output_format = AudioSampleFormat::kS16;
+  AudioSampleFormat output_format = AudioSampleFormat::kInt16;
   
   // Output sample rate (0 = same as input)
   uint32_t output_sample_rate = 0;
