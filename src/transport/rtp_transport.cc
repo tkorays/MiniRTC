@@ -198,18 +198,15 @@ TransportError RTPTransport::ReceiveRtpPacket(
 
   // Loopback mode: receive from local queue
   if (loopback_mode_.load()) {
-    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: loopback mode, timeout=%d, queue_size=%zu\n", timeout_ms, loopback_queue_.size());
     std::unique_lock<std::mutex> lock(loopback_mutex_);
     
     // Wait for packet with timeout
     // Also check loopback_mode_ to allow immediate wakeup on close
-    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: waiting for packet, queue_size=%zu\n", loopback_queue_.size());
     if (timeout_ms > 0) {
       auto wait_result = loopback_cv_.wait_for(
           lock, std::chrono::milliseconds(timeout_ms),
           [this] { return !loopback_queue_.empty() || !loopback_mode_.load(); });
       
-      fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: wait completed, queue_size=%zu\n", loopback_queue_.size());
       if (!wait_result) {
         return TransportError::kTimeout;
       }
@@ -223,27 +220,13 @@ TransportError RTPTransport::ReceiveRtpPacket(
       }
     }
     
-    // Get packet from queue
-    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: getting packet from queue\n");
+    // Get packet from queue - directly use the shared_ptr
     auto& item = loopback_queue_.front();
-    std::vector<uint8_t> data = std::move(item.first);
+    *packet = item.first;  // Directly use the packet
     *from = item.second;
     loopback_queue_.pop_front();
-    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: got packet, remaining=%zu\n", loopback_queue_.size());
     
     lock.unlock();
-    
-    // Debug: print first few bytes
-    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: data size=%zu, first bytes: %02x %02x %02x %02x\n",
-            data.size(), data[0], data[1], data[2], data[3]);
-    
-    // Parse RTP packet
-    *packet = std::make_shared<RtpPacket>();
-    int deser_result = (*packet)->Deserialize(data.data(), data.size());
-    if (deser_result != 0) {
-      fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: Deserialize failed with code %d\n", deser_result);
-      return TransportError::kInvalidParam;
-    }
 
     // Update receive statistics
     auto now = std::chrono::steady_clock::now().time_since_epoch().count();
