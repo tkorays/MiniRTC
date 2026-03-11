@@ -1278,12 +1278,26 @@ int main(int argc, char* argv[]) {
             std::shared_ptr<ITrack> video_track;
             std::shared_ptr<IJitterBuffer> audio_jitter_buffer;
             std::shared_ptr<IJitterBuffer> video_jitter_buffer;
+            std::shared_ptr<IBandwidthEstimator> bandwidth_estimator;
             int recv_count = 0;
             
             void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {
                 if (!packet) return;
                 recv_count++;
                 uint32_t ssrc = packet->GetSsrc();
+                
+                // 更新带宽估计器的包反馈
+                if (bandwidth_estimator) {
+                    PacketFeedback feedback;
+                    feedback.sequence_number = packet->GetSequenceNumber();
+                    feedback.payload_size = packet->GetPayloadSize();
+                    feedback.received = true;
+                    feedback.arrival_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+                    feedback.send_time_ms = packet->GetTimestamp() / 90;  // 假设90kHz时钟
+                    bandwidth_estimator->OnPacketFeedback(feedback);
+                }
+                
                 // 将包添加到对应的JitterBuffer进行缓冲和排序
                 if (ssrc == 1001 && audio_jitter_buffer) {
                     audio_jitter_buffer->AddPacket(packet);
@@ -1295,7 +1309,61 @@ int main(int argc, char* argv[]) {
             }
             void OnRtxPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {}
             void OnFecPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {}
-            void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {}
+            
+            void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {
+                if (!data || size == 0 || !bandwidth_estimator) return;
+                
+                // 解析RTCP包
+                RtcpParser parser;
+                std::vector<std::shared_ptr<RtcpPacket>> packets;
+                if (!parser.Parse(data, size, packets)) {
+                    return;
+                }
+                
+                // 处理每个RTCP包
+                for (const auto& packet : packets) {
+                    if (!packet) continue;
+                    
+                    // 处理Receiver Report (RR)
+                    if (packet->GetType() == RtcpPacketType::kRR) {
+                        auto rr = std::dynamic_pointer_cast<RtcpRrPacket>(packet);
+                        if (rr) {
+                            auto report_blocks = rr->GetReportBlocks();
+                            for (const auto& block : report_blocks) {
+                                // 计算丢包率 (fraction_lost是0-255的值，表示百分比/256)
+                                float loss_rate = static_cast<float>(block.fraction_lost) / 255.0f;
+                                
+                                // 更新丢包反馈
+                                PacketFeedback feedback;
+                                feedback.sequence_number = block.highest_seq & 0xFFFF;
+                                feedback.received = (block.packets_lost == 0);
+                                feedback.arrival_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                                feedback.send_time_ms = feedback.arrival_time_ms - 100;  // 估算
+                                bandwidth_estimator->OnPacketFeedback(feedback);
+                                
+                                // 从DLSR计算RTT (如果LSR可用)
+                                if (block.lsr != 0 && block.dlsr != 0) {
+                                    // RTT = receive time - LSR - DLSR
+                                    uint64_t now_ntp = (uint64_t)time(nullptr) << 32;
+                                    uint32_t dlsr_ms = (block.dlsr >> 16) & 0xFFFF;
+                                    int64_t rtt_ms = static_cast<int64_t>((now_ntp >> 16) - block.lsr - dlsr_ms);
+                                    if (rtt_ms > 0) {
+                                        bandwidth_estimator->OnRttUpdate(rtt_ms);
+                                        std::cout << "[BWE] RTT update: " << rtt_ms << " ms, loss rate: " << (loss_rate * 100) << "%" << std::endl;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 处理Sender Report (SR) - 可提取往返时间
+                    if (packet->GetType() == RtcpPacketType::kSR) {
+                        // 可以从SR中提取NTP时间戳来计算RTT
+                    }
+                }
+            }
+            
             void OnTransportError(TransportError error, const std::string& msg) override {
                 std::cout << "[RTP Callback] Transport error: " << static_cast<int>(error) << " msg=" << msg << std::endl;
             }
