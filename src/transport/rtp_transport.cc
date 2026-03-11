@@ -432,34 +432,36 @@ bool RTPTransport::IsLoopback() const {
 }
 
 void RTPTransport::ReceiveLoop() {
+  fprintf(stderr, "[RTPTransport] ReceiveLoop: started, receiving_=%d, loopback=%d\n", 
+          receiving_.load(), loopback_mode_.load());
   while (receiving_.load()) {
     std::shared_ptr<RtpPacket> packet;
     NetworkAddress from;
 
     // Use non-blocking receive with timeout
     TransportError error = ReceiveRtpPacket(&packet, &from, 100);
+    fprintf(stderr, "[RTPTransport] ReceiveLoop: error=%d, packet=%p\n", 
+            (int)error, (void*)packet.get());
 
     // Try IRtpTransportCallback first, fall back to ITransportCallback
     auto callback = callback_.lock();
     if (!callback) {
       callback = std::dynamic_pointer_cast<IRtpTransportCallback>(transport_callback_.lock());
+      fprintf(stderr, "[RTPTransport] ReceiveLoop: fallback callback=%p\n", (void*)callback.get());
     }
     
     if (error == TransportError::kOk && packet && callback) {
       // Dispatch to callback
       callback->OnRtpPacketReceived(packet, from);
+      fprintf(stderr, "[RTPTransport] ReceiveLoop: dispatched packet seq=%u\n", 
+              packet->GetSequenceNumber());
     } else if (error != TransportError::kTimeout) {
       if (callback) {
         callback->OnTransportError(error, "Receive error");
       }
     }
-    
-    // Debug: print receive status
-    if (error == TransportError::kOk && packet) {
-      fprintf(stderr, "[RTPTransport] ReceiveLoop: got packet seq=%u, callback=%p\n", 
-              packet->GetSequenceNumber(), (void*)callback.get());
-    }
   }
+  fprintf(stderr, "[RTPTransport] ReceiveLoop: exited\n");
 }
 
 void RTPTransport::ProcessReceivedData(const uint8_t* data,

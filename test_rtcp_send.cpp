@@ -66,8 +66,13 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
     
-    // Wait for RTCP timer to trigger
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    // Wait for RTCP timer to trigger (default is 5 seconds)
+    std::cout << "Waiting for RTCP timer..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(6000));
+    
+    // Manual trigger to ensure SR is sent
+    std::cout << "Manual SendSr() call..." << std::endl;
+    rtcp_module->SendSr();
     
     // Get stats
     auto stats = rtcp_module->GetStats();

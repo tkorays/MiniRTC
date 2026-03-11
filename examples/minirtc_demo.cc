@@ -1251,11 +1251,11 @@ int main(int argc, char* argv[]) {
     }
     
     // 设置RTP Transport回调 (Loopback模式使用内部接收)
-    std::shared_ptr<ITransportCallback> rtp_callback;
+    std::shared_ptr<IRtpTransportCallback> rtp_callback;
     std::atomic<bool> jitter_thread_running{false};
     if (mode == "loopback" && g_rtp_transport && g_audio_jitter_buffer && g_video_jitter_buffer) {
-        // 创建回调类来处理接收的RTP包
-        class RtpRecvCallback : public ITransportCallback {
+        // 创建回调类来处理接收的RTP包 (需要继承IRtpTransportCallback以支持dynamic_cast)
+        class RtpRecvCallback : public IRtpTransportCallback {
         public:
             std::shared_ptr<ITrack> audio_track;
             std::shared_ptr<ITrack> video_track;
@@ -1276,6 +1276,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "[RTP Callback] Unknown SSRC: " << ssrc << " seq=" << packet->GetSequenceNumber() << std::endl;
                 }
             }
+            void OnRtxPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {}
+            void OnFecPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {}
             void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {}
             void OnTransportError(TransportError error, const std::string& msg) override {
                 std::cout << "[RTP Callback] Transport error: " << static_cast<int>(error) << " msg=" << msg << std::endl;
@@ -1290,14 +1292,9 @@ int main(int argc, char* argv[]) {
         callback->video_jitter_buffer = g_video_jitter_buffer;
         rtp_callback = callback;
         
-        std::cout << "[RTP] Callback created, trying to cast..." << std::endl;
-        auto rtp_callback_cast = std::dynamic_pointer_cast<IRtpTransportCallback>(rtp_callback);
-        if (rtp_callback_cast) {
-            std::cout << "[RTP] Callback cast successful!" << std::endl;
-        } else {
-            std::cout << "[RTP] Callback cast FAILED!" << std::endl;
-        }
+        std::cout << "[RTP] Callback created (IRtpTransportCallback), setting..." << std::endl;
         
+        // SetCallback需要ITransportCallback，会自动cast
         g_rtp_transport->SetCallback(rtp_callback);
         
         std::cout << "[RTP] Setting callback and starting receiving..." << std::endl;
