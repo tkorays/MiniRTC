@@ -191,7 +191,7 @@ class RTPTransport : public IRTPTransport {
 
   // Loopback mode support
   std::atomic<bool> loopback_mode_{false};
-  std::deque<std::pair<std::vector<uint8_t>, NetworkAddress>> loopback_queue_;
+  std::deque<std::pair<std::shared_ptr<RtpPacket>, NetworkAddress>> loopback_queue_;
   std::mutex loopback_mutex_;
   std::condition_variable loopback_cv_;
 };
