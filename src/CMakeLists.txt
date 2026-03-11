@@ -8,6 +8,9 @@ add_library(minirtc_codec OBJECT
     transport/network_interface.cc
     transport/srtp_transport.cc
     
+    # DTLS/SRTP module
+    dtls_srtp.cc
+    
     # Capture/Render module (new implementation)
     capture_render_factory.cc
     fake_video_capture.cc
@@ -31,6 +34,12 @@ add_library(minirtc_codec OBJECT
     
     # E2E test module
     e2e_test.cc
+    
+    # Bandwidth Estimator module
+    bandwidth_estimator.cc
+    
+    # ICE module
+    ice.cc
 )
 
 target_include_directories(minirtc_codec PUBLIC
