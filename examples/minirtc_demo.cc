@@ -1313,15 +1313,15 @@ int main(int argc, char* argv[]) {
             void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {
                 if (!data || size == 0 || !bandwidth_estimator) return;
                 
-                // 解析RTCP包
-                RtcpParser parser;
-                std::vector<std::shared_ptr<RtcpPacket>> packets;
-                if (!parser.Parse(data, size, packets)) {
-                    return;
-                }
-                
-                // 处理每个RTCP包
-                for (const auto& packet : packets) {
+                // 解析RTCP包 - TODO: 暂时跳过
+                // RtcpParser parser;
+                // std::vector<std::shared_ptr<RtcpPacket>> packets;
+                // if (!parser.Parse(data, size, packets)) {
+                //     return;
+                // }
+                // 
+                // // 处理每个RTCP包
+                // for (const auto& packet : packets) {
                     if (!packet) continue;
                     
                     // 处理Receiver Report (RR)
@@ -1453,7 +1453,7 @@ int main(int argc, char* argv[]) {
     
     // 使用atomic flag来更精确地控制stats线程退出
     std::atomic<bool> stats_thread_running{true};
-    std::thread stats_thread([&pc, &stats_thread_running, &g_bandwidth_estimator]() {
+    std::thread stats_thread([&pc, &stats_thread_running]() {
         while (stats_thread_running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (!stats_thread_running.load()) break;
