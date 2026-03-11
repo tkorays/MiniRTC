@@ -182,6 +182,7 @@ struct TransportConfig {
   uint32_t socket_buffer_size = 65536; ///< Socket buffer size
   bool enable_ipv6 = false;            ///< Enable IPv6
   int timeout_ms = 3000;              ///< Timeout in milliseconds
+  bool loopback_mode = false;          ///< Enable loopback mode for local testing
 };
 
 /// Socket options

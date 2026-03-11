@@ -40,11 +40,9 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
   config_.socket_buffer_size = config.socket_buffer_size;
   config_.enable_ipv6 = config.enable_ipv6;
   config_.timeout_ms = config.timeout_ms;
-  config_.loopback_mode = config.loopback_mode;  // Copy loopback_mode from input config
 
-  // Check if loopback mode is requested
+  // Check if loopback mode is requested (should be set via SetConfig before Open)
   bool is_loopback = config_.loopback_mode;
-  fprintf(stderr, "[RTPTransport] Open: loopback_mode=%d\n", is_loopback);
 
 #ifdef _WIN32
   WSADATA wsa_data;
@@ -156,7 +154,7 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
 
   // Loopback mode: put packet in local queue for receiving
   if (loopback_mode_.load()) {
-    fprintf(stderr, "[RTPTransport] SendRtpPacket: loopback mode, queuing packet\n");
+    fprintf(stderr, "[RTPTransport] SendRtpPacket: this=%p, loopback mode, queuing packet\n", this);
     std::vector<uint8_t> data(packet->GetData(), packet->GetData() + packet->GetSize());
     NetworkAddress from;
     from.ip = "127.0.0.1";
@@ -437,6 +435,7 @@ bool RTPTransport::IsLoopback() const {
 }
 
 void RTPTransport::ReceiveLoop() {
+  fprintf(stderr, "[RTPTransport] ReceiveLoop: this=%p\n", this);
   while (receiving_.load()) {
     std::shared_ptr<RtpPacket> packet;
     NetworkAddress from;
