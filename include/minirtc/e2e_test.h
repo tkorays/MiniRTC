@@ -11,6 +11,7 @@
 #include <thread>
 #include <atomic>
 #include "minirtc/transport/rtp_transport.h"
+#include "minirtc/transport/rtcp_module.h"
 #include "minirtc/stream_track.h"
 
 namespace minirtc {
@@ -62,9 +63,17 @@ private:
     void RunSender(RTPTransport* transport, int duration_sec);
     void RunReceiver(RTPTransport* transport, std::atomic<uint64_t>& received);
     
+    // Initialize RTCP module
+    void InitializeRtcp();
+    
     E2EConfig config_;
     std::unique_ptr<RTPTransport> transport_a_;
     std::unique_ptr<RTPTransport> transport_b_;
+    
+    // RTCP modules
+    std::unique_ptr<RTCPModule> rtcp_module_a_;
+    std::unique_ptr<RTCPModule> rtcp_module_b_;
+    
     std::atomic<bool> running_{false};
 };
 

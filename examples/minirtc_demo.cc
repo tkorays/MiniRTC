@@ -35,6 +35,7 @@
 #include "minirtc/stats.h"
 #include "minirtc/sdp.h"
 #include "minirtc/ice.h"
+#include "minirtc/jitter_buffer.h"
 
 // 手动声明需要的类型，避免包含transport_types.h带来的重定义问题
 namespace minirtc {
@@ -282,6 +283,10 @@ std::unique_ptr<UdpLoopbackManager> g_udp_loopback;
 
 // 全局RTP Transport (用于loopback模式)
 std::shared_ptr<IRTPTransport> g_rtp_transport;
+
+// 全局JitterBuffer (用于接收端缓冲和排序)
+std::shared_ptr<IJitterBuffer> g_audio_jitter_buffer;
+std::shared_ptr<IJitterBuffer> g_video_jitter_buffer;
 
 // ============================================================================
 // Stats printing utility
