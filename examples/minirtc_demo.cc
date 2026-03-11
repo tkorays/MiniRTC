@@ -390,13 +390,28 @@ int main(int argc, char* argv[]) {
                 enable_audio = false;
                 break;
             case 'w':
-                width = std::stoi(optarg);
+                try {
+                    width = std::stoi(optarg);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: Invalid width value: " << optarg << std::endl;
+                    return 1;
+                }
                 break;
             case 'h':
-                height = std::stoi(optarg);
+                try {
+                    height = std::stoi(optarg);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: Invalid height value: " << optarg << std::endl;
+                    return 1;
+                }
                 break;
             case 'f':
-                fps = std::stoi(optarg);
+                try {
+                    fps = std::stoi(optarg);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: Invalid fps value: " << optarg << std::endl;
+                    return 1;
+                }
                 break;
             case '?':
                 print_usage(argv[0]);
