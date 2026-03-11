@@ -41,33 +41,42 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
   config_.enable_ipv6 = config.enable_ipv6;
   config_.timeout_ms = config.timeout_ms;
 
-  // Create RTP socket
+  // Check if loopback mode is requested
+  bool is_loopback = config_.loopback_mode;
+
 #ifdef _WIN32
   WSADATA wsa_data;
   WSAStartup(MAKEWORD(2, 2), &wsa_data);
 #endif
 
-  rtp_socket_ = CreateNetworkInterface();
-  if (!rtp_socket_) {
-    return TransportError::kSocketError;
-  }
-
-  TransportError error = rtp_socket_->Create(
-      NetworkInterfaceType::kUdpSocket, config.local_addr);
-  if (error != TransportError::kOk) {
-    rtp_socket_.reset();
-    return error;
-  }
-
-  // Create RTCP socket if enabled
-  if (config_.enable_rtcp && config_.rtcp_port != 0) {
-    NetworkAddress rtcp_addr = config.local_addr;
-    rtcp_addr.port = config_.rtcp_port;
-
-    rtcp_socket_ = CreateNetworkInterface();
-    if (rtcp_socket_) {
-      rtcp_socket_->Create(NetworkInterfaceType::kUdpSocket, rtcp_addr);
+  // In loopback mode, we don't need actual sockets
+  if (!is_loopback) {
+    // Create RTP socket
+    rtp_socket_ = CreateNetworkInterface();
+    if (!rtp_socket_) {
+      return TransportError::kSocketError;
     }
+
+    TransportError error = rtp_socket_->Create(
+        NetworkInterfaceType::kUdpSocket, config.local_addr);
+    if (error != TransportError::kOk) {
+      rtp_socket_.reset();
+      return error;
+    }
+
+    // Create RTCP socket if enabled
+    if (config_.enable_rtcp && config_.rtcp_port != 0) {
+      NetworkAddress rtcp_addr = config.local_addr;
+      rtcp_addr.port = config_.rtcp_port;
+
+      rtcp_socket_ = CreateNetworkInterface();
+      if (rtcp_socket_) {
+        rtcp_socket_->Create(NetworkInterfaceType::kUdpSocket, rtcp_addr);
+      }
+    }
+  } else {
+    // Loopback mode: enable loopback flag
+    loopback_mode_.store(true);
   }
 
   // Set random sequence number
@@ -95,6 +104,10 @@ void RTPTransport::Close() {
     rtp_socket_.reset();
   }
 
+  // Clear loopback queue
+  loopback_queue_.clear();
+  loopback_mode_.store(false);
+  
   state_ = TransportState::kClosed;
 }
 
@@ -112,7 +125,10 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
   }
 
   if (!rtp_socket_ || !rtp_socket_->IsValid()) {
-    return TransportError::kSocketError;
+    // Allow loopback mode without valid socket (for testing)
+    if (!loopback_mode_.load()) {
+      return TransportError::kSocketError;
+    }
   }
 
   // Serialize if needed
@@ -130,7 +146,24 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
     packet->SetSequenceNumber(sequence_number_++);
   }
 
-  // Send packet
+  // Loopback mode: put packet in local queue for receiving
+  if (loopback_mode_.load()) {
+    std::vector<uint8_t> data(packet->GetData(), packet->GetData() + packet->GetSize());
+    NetworkAddress from;
+    from.ip = "127.0.0.1";
+    from.port = config_.local_addr.port;
+    
+    {
+      std::lock_guard<std::mutex> lock(loopback_mutex_);
+      loopback_queue_.push_back({std::move(data), from});
+    }
+    loopback_cv_.notify_one();
+    
+    UpdateSendStats(packet->GetSize());
+    return TransportError::kOk;
+  }
+
+  // Normal mode: send packet to remote
   NetworkAddress dest = config_.remote_addr;
   if (dest.ip.empty() || dest.port == 0) {
     if (remote_candidates_.empty()) {
@@ -157,6 +190,49 @@ TransportError RTPTransport::ReceiveRtpPacket(
     return TransportError::kNotInitialized;
   }
 
+  // Loopback mode: receive from local queue
+  if (loopback_mode_.load()) {
+    std::unique_lock<std::mutex> lock(loopback_mutex_);
+    
+    // Wait for packet with timeout
+    if (timeout_ms > 0) {
+      auto wait_result = loopback_cv_.wait_for(
+          lock, std::chrono::milliseconds(timeout_ms),
+          [this] { return !loopback_queue_.empty(); });
+      
+      if (!wait_result) {
+        return TransportError::kTimeout;
+      }
+    } else {
+      // Non-blocking mode
+      if (loopback_queue_.empty()) {
+        return TransportError::kTimeout;
+      }
+    }
+    
+    // Get packet from queue
+    auto& item = loopback_queue_.front();
+    std::vector<uint8_t> data = std::move(item.first);
+    *from = item.second;
+    loopback_queue_.pop_front();
+    
+    lock.unlock();
+    
+    // Parse RTP packet
+    *packet = std::make_shared<RtpPacket>();
+    if ((*packet)->Deserialize(data.data(), data.size()) != 0) {
+      return TransportError::kInvalidParam;
+    }
+
+    // Update receive statistics
+    auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    UpdateReceiveStats((*packet)->GetSequenceNumber(),
+                       static_cast<uint64_t>(now) / 1000);
+
+    return TransportError::kOk;
+  }
+
+  // Normal mode: receive from socket
   if (!rtp_socket_ || !rtp_socket_->IsValid()) {
     return TransportError::kSocketError;
   }
@@ -319,6 +395,19 @@ RtpReceiveStats RTPTransport::GetRtpReceiveStats() const {
 RtpSendStats RTPTransport::GetRtpSendStats() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return send_stats_;
+}
+
+void RTPTransport::SetLoopbackMode(bool enabled) {
+  loopback_mode_.store(enabled);
+  if (enabled) {
+    // Clear any pending packets in the queue
+    std::lock_guard<std::mutex> lock(loopback_mutex_);
+    loopback_queue_.clear();
+  }
+}
+
+bool RTPTransport::IsLoopback() const {
+  return loopback_mode_.load();
 }
 
 void RTPTransport::ReceiveLoop() {

@@ -119,6 +119,12 @@ class SRTPTransport : public ISRTPTransport {
   /// Get RTP send statistics
   RtpSendStats GetRtpSendStats() const override;
 
+  /// Set loopback mode
+  void SetLoopbackMode(bool enabled) override;
+
+  /// Check if loopback mode is enabled
+  bool IsLoopback() const override;
+
   // ========================================================================
   // ISRTPTransport Interface
   // ========================================================================

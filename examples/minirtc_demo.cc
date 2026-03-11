@@ -36,6 +36,18 @@
 #include "minirtc/sdp.h"
 #include "minirtc/ice.h"
 
+// 手动声明需要的类型，避免包含transport_types.h带来的重定义问题
+namespace minirtc {
+class IRTPTransport;
+struct RtpTransportConfig;
+enum class TransportError;
+struct NetworkAddress;
+class RtpPacket;
+}
+
+// 包含RTPTransport的实现（只包含实现，不重新定义类型）
+#include "minirtc/transport/rtp_transport.h"
+
 using namespace minirtc;
 
 // ============================================================================
@@ -266,6 +278,9 @@ private:
 // 全局UDP环回管理器
 std::unique_ptr<UdpLoopbackManager> g_udp_loopback;
 
+// 全局RTP Transport (用于loopback模式)
+std::shared_ptr<IRTPTransport> g_rtp_transport;
+
 // ============================================================================
 // Stats printing utility
 // ============================================================================
@@ -379,16 +394,19 @@ class AudioTrack : public ITrack, public AudioCaptureObserver, public AudioPlayO
 public:
     using SendRtpCallback = std::function<bool(std::shared_ptr<RtpPacket>)>;
     using UdpLoopbackPtr = UdpLoopbackManager*;
+    using RtpTransportPtr = std::shared_ptr<IRTPTransport>;
     
     AudioTrack(uint32_t id, const std::string& name, uint32_t ssrc,
                std::unique_ptr<IAudioCapture> capture,
                std::unique_ptr<IAudioPlayer> player,
                SendRtpCallback send_rtp_callback = nullptr,
-               UdpLoopbackPtr udp_loopback = nullptr)
+               UdpLoopbackPtr udp_loopback = nullptr,
+               RtpTransportPtr rtp_transport = nullptr)
         : id_(id), name_(name), ssrc_(ssrc), 
           capture_(std::move(capture)), player_(std::move(player)),
           send_rtp_callback_(std::move(send_rtp_callback)),
           udp_loopback_(udp_loopback),
+          rtp_transport_(rtp_transport),
           running_(false), rtp_seq_(0), rtp_timestamp_(0) {
         
         // Initialize capture
@@ -484,7 +502,29 @@ public:
             player_->PlayFrame(frame);
         }
         
-        // 如果有UDP环回，则发送RTP包
+        // 优先使用RTPTransport发送RTP包 (经过传输层)
+        if (rtp_transport_ && running_) {
+            // 创建RTP包
+            auto packet = std::make_shared<RtpPacket>(111, rtp_timestamp_, rtp_seq_);
+            packet->SetSsrc(ssrc_);
+            
+            // 设置payload
+            size_t payload_size = std::min(frame.data.size(), static_cast<size_t>(1400));
+            packet->SetPayload(frame.data.data(), payload_size);
+            packet->SetMarker(1);  // Mark frame boundary
+            
+            // 发送RTP包
+            if (rtp_transport_->SendRtpPacket(packet) == TransportError::kOk) {
+                rtp_seq_++;
+                rtp_timestamp_ += frame.samples_per_channel;
+                std::lock_guard<std::mutex> lock(mutex_);
+                stats_.rtp_sent++;
+                stats_.bytes_sent += 12 + payload_size;
+            }
+            return;  // 优先使用RTPTransport，不再走旧的UDP路径
+        }
+        
+        // 如果有UDP环回，则发送RTP包 (旧路径)
         if (udp_loopback_ && running_) {
             static int frame_count = 0;
             frame_count++;
@@ -545,6 +585,7 @@ private:
     std::unique_ptr<IAudioPlayer> player_;
     SendRtpCallback send_rtp_callback_;
     UdpLoopbackManager* udp_loopback_;
+    std::shared_ptr<IRTPTransport> rtp_transport_;
     bool running_;
     mutable std::mutex mutex_;
     TrackStats stats_;
@@ -556,16 +597,19 @@ class VideoTrack : public ITrack, public VideoCaptureObserver, public VideoRende
 public:
     using SendRtpCallback = std::function<bool(std::shared_ptr<RtpPacket>)>;
     using UdpLoopbackPtr = UdpLoopbackManager*;
+    using RtpTransportPtr = std::shared_ptr<IRTPTransport>;
     
     VideoTrack(uint32_t id, const std::string& name, uint32_t ssrc,
                std::unique_ptr<IVideoCapture> capture,
                std::unique_ptr<IVideoRenderer> renderer,
                SendRtpCallback send_rtp_callback = nullptr,
-               UdpLoopbackPtr udp_loopback = nullptr)
+               UdpLoopbackPtr udp_loopback = nullptr,
+               RtpTransportPtr rtp_transport = nullptr)
         : id_(id), name_(name), ssrc_(ssrc),
           capture_(std::move(capture)), renderer_(std::move(renderer)),
           send_rtp_callback_(std::move(send_rtp_callback)),
           udp_loopback_(udp_loopback),
+          rtp_transport_(rtp_transport),
           running_(false), rtp_seq_(0), rtp_timestamp_(0) {
         
         // Initialize capture
@@ -668,7 +712,32 @@ public:
             renderer_->RenderFrame(frame);
         }
         
-        // 如果有UDP环回，则发送RTP包
+        // 优先使用RTPTransport发送RTP包 (经过传输层)
+        if (rtp_transport_ && running_) {
+            // 创建RTP包
+            auto packet = std::make_shared<RtpPacket>(96, rtp_timestamp_, rtp_seq_);
+            packet->SetSsrc(ssrc_);
+            
+            // 设置payload (从YUV数据)
+            size_t frame_size = frame.GetBufferSize();
+            size_t payload_size = std::min(frame_size, static_cast<size_t>(1400));
+            if (frame.data_y && payload_size > 0) {
+                packet->SetPayload(frame.data_y, payload_size);
+            }
+            packet->SetMarker(1);  // Mark frame boundary
+            
+            // 发送RTP包
+            if (rtp_transport_->SendRtpPacket(packet) == TransportError::kOk) {
+                rtp_seq_++;
+                rtp_timestamp_ += 3000;  // 30fps, 90kHz/30 = 3000
+                std::lock_guard<std::mutex> lock(mutex_);
+                stats_.rtp_sent++;
+                stats_.bytes_sent += 12 + payload_size;
+            }
+            return;  // 优先使用RTPTransport，不再走旧的UDP路径
+        }
+        
+        // 如果有UDP环回，则发送RTP包 (旧路径)
         if (udp_loopback_ && running_) {
             // 手动构建RTP包
             uint8_t rtp_buffer[2048];
@@ -726,6 +795,7 @@ private:
     std::unique_ptr<IVideoRenderer> renderer_;
     SendRtpCallback send_rtp_callback_;
     UdpLoopbackManager* udp_loopback_;
+    std::shared_ptr<IRTPTransport> rtp_transport_;
     bool running_;
     mutable std::mutex mutex_;
     TrackStats stats_;
@@ -948,6 +1018,27 @@ int main(int argc, char* argv[]) {
     std::cout << "[UDP] UDP已启动 (发送端口: " << UdpLoopbackManager::kSendPort 
               << ", 接收端口: " << UdpLoopbackManager::kRecvPort << ")" << std::endl;
     
+    // 创建RTPTransport (Loopback模式)
+    if (mode == "loopback") {
+        std::cout << "[RTPTransport] 创建RTP传输层 (Loopback模式)..." << std::endl;
+        g_rtp_transport = CreateRTPTransport();
+        
+        // 配置为loopback模式
+        RtpTransportConfig config;
+        config.type = TransportType::kUdp;
+        config.local_addr = NetworkAddress("127.0.0.1", UdpLoopbackManager::kSendPort);
+        config.remote_addr = NetworkAddress("127.0.0.1", UdpLoopbackManager::kRecvPort);
+        config.loopback_mode = true;  // 启用loopback模式
+        config.ssrc = 0x12345678;     // 设置SSRC
+        
+        TransportError error = g_rtp_transport->Open(config);
+        if (error != TransportError::kOk) {
+            std::cerr << "Failed to open RTP transport: " << static_cast<int>(error) << std::endl;
+            return 1;
+        }
+        std::cout << "[RTPTransport] RTP传输层已启动 (Loopback模式)" << std::endl;
+    }
+    
     // Caller模式: 生成offer SDP并打印
     if (mode == "caller") {
         std::cout << "\n========== Caller 模式 ==========\n";
@@ -1081,7 +1172,8 @@ int main(int argc, char* argv[]) {
             1, "audio_track", 1001, 
             std::move(capture), std::move(player),
             nullptr,  // send_rtp_callback (unused)
-            g_udp_loopback.get()  // udp_loopback
+            g_udp_loopback.get(),  // udp_loopback
+            g_rtp_transport  // rtp_transport (loopback模式使用)
         );
         pc->AddTrack(audio_track_ptr);
     }
@@ -1100,7 +1192,8 @@ int main(int argc, char* argv[]) {
             2, "video_track", 1002,
             std::move(capture), std::move(renderer),
             nullptr,  // send_rtp_callback (unused)
-            g_udp_loopback.get()  // udp_loopback
+            g_udp_loopback.get(),  // udp_loopback
+            g_rtp_transport  // rtp_transport (loopback模式使用)
         );
         pc->AddTrack(video_track_ptr);
     }
@@ -1116,6 +1209,30 @@ int main(int argc, char* argv[]) {
                 audio_track_ptr->OnRtpPacketReceived(packet);
             } else if (video_track_ptr && ssrc == 1002) {
                 video_track_ptr->OnRtpPacketReceived(packet);
+            }
+        });
+    }
+    
+    // 启动RTP接收线程 (Loopback模式)
+    std::thread rtp_recv_thread;
+    if (mode == "loopback" && g_rtp_transport) {
+        rtp_recv_thread = std::thread([&]() {
+            while (g_running) {
+                std::shared_ptr<RtpPacket> packet;
+                NetworkAddress from;
+                
+                // 从RTPTransport接收包 (使用loopback模式)
+                TransportError error = g_rtp_transport->ReceiveRtpPacket(&packet, &from, 100);
+                
+                if (error == TransportError::kOk && packet) {
+                    // 根据SSRC判断是音频还是视频
+                    uint32_t ssrc = packet->GetSsrc();
+                    if (audio_track_ptr && ssrc == 1001) {
+                        audio_track_ptr->OnRtpPacketReceived(packet);
+                    } else if (video_track_ptr && ssrc == 1002) {
+                        video_track_ptr->OnRtpPacketReceived(packet);
+                    }
+                }
             }
         });
     }
@@ -1179,10 +1296,21 @@ int main(int argc, char* argv[]) {
     
     pc->Stop();
     
+    // 停止RTP接收线程
+    if (rtp_recv_thread.joinable()) {
+        rtp_recv_thread.join();
+    }
+    
     // 停止UDP环回
     if (g_udp_loopback) {
         g_udp_loopback->Stop();
         g_udp_loopback.reset();
+    }
+    
+    // 关闭RTP Transport
+    if (g_rtp_transport) {
+        g_rtp_transport->Close();
+        g_rtp_transport.reset();
     }
     
     // Print stats before exit

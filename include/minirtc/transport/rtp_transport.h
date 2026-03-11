@@ -12,6 +12,7 @@
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+#include <deque>
 
 #include "minirtc/transport/transport.h"
 #include "minirtc/transport/transport_types.h"
@@ -123,6 +124,12 @@ class RTPTransport : public IRTPTransport {
   /// Get RTP send statistics
   RtpSendStats GetRtpSendStats() const override;
 
+  /// Set loopback mode (for local testing without network)
+  void SetLoopbackMode(bool enabled) override;
+
+  /// Check if loopback mode is enabled
+  bool IsLoopback() const override;
+
  private:
   /// Receive thread function
   void ReceiveLoop();
@@ -173,6 +180,12 @@ class RTPTransport : public IRTPTransport {
   // NACK state
   std::mutex nack_mutex_;
   std::vector<uint16_t> pending_nacks_;
+
+  // Loopback mode support
+  std::atomic<bool> loopback_mode_{false};
+  std::deque<std::pair<std::vector<uint8_t>, NetworkAddress>> loopback_queue_;
+  std::mutex loopback_mutex_;
+  std::condition_variable loopback_cv_;
 };
 
 // ============================================================================

@@ -291,6 +291,21 @@ RtpSendStats SRTPTransport::GetRtpSendStats() const {
   return RtpSendStats();
 }
 
+void SRTPTransport::SetLoopbackMode(bool enabled) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (rtp_transport_) {
+    rtp_transport_->SetLoopbackMode(enabled);
+  }
+}
+
+bool SRTPTransport::IsLoopback() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (rtp_transport_) {
+    return rtp_transport_->IsLoopback();
+  }
+  return false;
+}
+
 TransportError SRTPTransport::SetSrtpPolicy(const SrtpPolicy& policy) {
   std::lock_guard<std::mutex> lock(mutex_);
 

@@ -8,6 +8,7 @@
 
 namespace minirtc {
 
+#ifndef MINIRTC_ICE_CANDIDATE_TYPE_DEFINED
 // ICE candidate类型
 enum class IceCandidateType {
     kHost,     // 本地候选
@@ -15,6 +16,8 @@ enum class IceCandidateType {
     kPrflx,    // 对等 reflexive (TURN)
     kRelayed   // 中继候选 (TURN)
 };
+#define MINIRTC_ICE_CANDIDATE_TYPE_DEFINED
+#endif
 
 // ICE协议
 enum class IceProtocol {
@@ -23,6 +26,7 @@ enum class IceProtocol {
 };
 
 // ICE候选
+#ifndef MINIRTC_ICE_CANDIDATE_DEFINED
 struct IceCandidate {
     uint32_t foundation = 0;
     uint32_t component_id = 1;
@@ -34,6 +38,8 @@ struct IceCandidate {
     IceCandidateType type = IceCandidateType::kHost;
     std::string transport_addr; // 传输地址
 };
+#define MINIRTC_ICE_CANDIDATE_DEFINED
+#endif
 
 // STUN消息类型
 enum class StunMessageType {

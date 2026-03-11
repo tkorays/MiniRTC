@@ -66,6 +66,7 @@ enum class RtcpPacketType {
   kPSFB = 206,     ///< Payload-Specific Feedback (FEC)
 };
 
+#ifndef MINIRTC_ICE_CANDIDATE_TYPE_DEFINED
 /// ICE candidate type
 enum class IceCandidateType {
   kHost,       ///< Host candidate
@@ -73,6 +74,8 @@ enum class IceCandidateType {
   kPrflx,      ///< Peer reflexive
   kRelayed,    ///< Relayed (TURN)
 };
+#define MINIRTC_ICE_CANDIDATE_TYPE_DEFINED
+#endif
 
 /// ICE candidate transport protocol
 enum class IceCandidateTransport {
@@ -154,6 +157,7 @@ struct NetworkAddress {
   }
 };
 
+#ifndef MINIRTC_TRANSPORT_STATS_DEFINED
 /// Transport statistics
 struct TransportStats {
   uint64_t packets_sent = 0;            ///< Packets sent
@@ -167,6 +171,8 @@ struct TransportStats {
   uint32_t receiver_bitrate_bps = 0;   ///< Receiver bitrate (bps)
   uint64_t last_packet_timestamp_us = 0; ///< Last packet timestamp (microseconds)
 };
+#define MINIRTC_TRANSPORT_STATS_DEFINED
+#endif
 
 /// Transport configuration
 struct TransportConfig {
@@ -257,7 +263,7 @@ struct RtpSendStats {
   uint32_t bitrate_bps = 0;               ///< Current bitrate
 };
 
-/// RTCP configuration
+/// RTP transport configuration
 struct RtpTransportConfig : public TransportConfig {
   uint32_t ssrc = 0;                      ///< SSRC identifier
   uint16_t rtcp_port = 0;                ///< RTCP port (even + 1)
@@ -267,8 +273,10 @@ struct RtpTransportConfig : public TransportConfig {
   int max_packet_size = 1500;            ///< Max packet size
   bool enable_rtx = false;                ///< Enable retransmission
   uint8_t rtx_payload_type = 0;           ///< RTX payload type
+  bool loopback_mode = false;            ///< Enable loopback mode
 };
 
+#ifndef MINIRTC_ICE_CANDIDATE_DEFINED
 /// ICE candidate
 struct IceCandidate {
   uint32_t foundation;                    ///< Foundation identifier
@@ -282,6 +290,8 @@ struct IceCandidate {
 
   std::string ToString() const;           ///< Convert to SDP format
 };
+#define MINIRTC_ICE_CANDIDATE_DEFINED
+#endif
 
 /// ICE configuration
 struct IceConfig {

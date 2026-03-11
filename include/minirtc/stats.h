@@ -174,6 +174,7 @@ struct VideoReceiverStats : public RTCStatsMember {
 // Transport Stats
 // ============================================================================
 
+#ifndef MINIRTC_TRANSPORT_STATS_DEFINED
 // Transport stats
 struct TransportStats : public RTCStatsMember {
     RTCStatsType type = RTCStatsType::kTransport;
@@ -188,6 +189,8 @@ struct TransportStats : public RTCStatsMember {
     // RTT
     uint32_t round_trip_time_ms = 0;
 };
+#define MINIRTC_TRANSPORT_STATS_DEFINED
+#endif
 
 // ============================================================================
 // Peer Connection Stats

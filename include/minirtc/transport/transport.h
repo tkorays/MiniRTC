@@ -193,6 +193,12 @@ class IRTPTransport : public ITransport {
 
   /// Get RTP send statistics
   virtual RtpSendStats GetRtpSendStats() const = 0;
+
+  /// Set loopback mode (for local testing without network)
+  virtual void SetLoopbackMode(bool enabled) = 0;
+
+  /// Check if loopback mode is enabled
+  virtual bool IsLoopback() const = 0;
 };
 
 // ============================================================================
