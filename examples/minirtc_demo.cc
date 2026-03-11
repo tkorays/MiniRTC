@@ -1311,10 +1311,14 @@ int main(int argc, char* argv[]) {
         std::cout << "[JitterBuffer] 启动消费线程..." << std::endl;
         jitter_thread_running.store(true);
         
+        // 获取JitterBuffer的shared_ptr供线程使用
+        auto audio_jb = g_audio_jitter_buffer;
+        auto video_jb = g_video_jitter_buffer;
+        
         // 音频JitterBuffer消费线程
-        std::thread audio_jitter_thread([&audio_track_ptr, &g_audio_jitter_buffer, &jitter_thread_running]() {
+        std::thread audio_jitter_thread([audio_track_ptr, audio_jb, &jitter_thread_running]() {
             while (jitter_thread_running.load()) {
-                auto packet = g_audio_jitter_buffer->GetPacket(10);  // 10ms超时
+                auto packet = audio_jb->GetPacket(10);  // 10ms超时
                 if (packet && audio_track_ptr) {
                     audio_track_ptr->OnRtpPacketReceived(packet);
                 }
@@ -1322,9 +1326,9 @@ int main(int argc, char* argv[]) {
         });
         
         // 视频JitterBuffer消费线程
-        std::thread video_jitter_thread([&video_track_ptr, &g_video_jitter_buffer, &jitter_thread_running]() {
+        std::thread video_jitter_thread([video_track_ptr, video_jb, &jitter_thread_running]() {
             while (jitter_thread_running.load()) {
-                auto packet = g_video_jitter_buffer->GetPacket(10);  // 10ms超时
+                auto packet = video_jb->GetPacket(10);  // 10ms超时
                 if (packet && video_track_ptr) {
                     video_track_ptr->OnRtpPacketReceived(packet);
                 }
