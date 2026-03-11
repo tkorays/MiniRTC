@@ -229,10 +229,12 @@ TransportError RTPTransport::ReceiveRtpPacket(
     }
     
     // Get packet from queue
+    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: getting packet from queue\n");
     auto& item = loopback_queue_.front();
     std::vector<uint8_t> data = std::move(item.first);
     *from = item.second;
     loopback_queue_.pop_front();
+    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: got packet, remaining=%zu\n", loopback_queue_.size());
     
     lock.unlock();
     

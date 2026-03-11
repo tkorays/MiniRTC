@@ -37,6 +37,7 @@
 #include "minirtc/ice.h"
 #include "minirtc/jitter_buffer.h"
 #include "minirtc/bandwidth_estimator.h"
+#include "minirtc/transport/rtcp_packet.h"
 
 // 手动声明需要的类型，避免包含transport_types.h带来的重定义问题
 namespace minirtc {
