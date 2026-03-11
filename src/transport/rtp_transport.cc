@@ -504,6 +504,19 @@ void RTPTransport::ReceiveLoop() {
     }
     
     if (error == TransportError::kOk && packet && callback) {
+      // Handle NACK: inform NACK module about received packet
+      if (nack_module_ && enable_nack_) {
+        nack_module_->OnRtpPacketReceived(packet);
+        
+        // Get NACK list for missing packets and process them
+        auto now = std::chrono::steady_clock::now().time_since_epoch().count() / 1000;  // ms
+        auto nack_list = nack_module_->GetNackList(now);
+        if (!nack_list.empty()) {
+          fprintf(stderr, "[RTPTransport] NACK: %zu packets need retransmission\n", nack_list.size());
+          // The NACK module callback will handle sending NACK requests
+        }
+      }
+      
       // Dispatch to callback
       callback->OnRtpPacketReceived(packet, from);
     } else if (error != TransportError::kTimeout) {
