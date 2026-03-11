@@ -478,7 +478,6 @@ bool RTPTransport::IsLoopback() const {
 }
 
 void RTPTransport::ReceiveLoop() {
-  fprintf(stderr, "[RTPTransport] ReceiveLoop: this=%p\n", this);
   while (receiving_.load()) {
     std::shared_ptr<RtpPacket> packet;
     NetworkAddress from;
