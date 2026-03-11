@@ -93,6 +93,75 @@ CodecError H264Decoder::Decode(std::shared_ptr<EncodedFrame> input,
     return CodecError::kNotInitialized;
   }
   
+#ifdef MINIRTC_USE_H264
+  if (!decoder_) {
+    return CodecError::kNotInitialized;
+  }
+  
+  const uint8_t* input_data = input->GetData();
+  size_t input_size = input->GetSize();
+  
+  if (input_size == 0 || !input_data) {
+    return CodecError::kInvalidParam;
+  }
+  
+  // Prepare input buffer
+  memset(&dec_output_info_, 0, sizeof(dec_output_info_));
+  std::vector<uint8_t> input_buffer(input_size);
+  memcpy(input_buffer.data(), input_data, input_size);
+  
+  // Decode frame
+  SDecInputBuffer dec_input;
+  memset(&dec_input, 0, sizeof(dec_input));
+  dec_input.iBufferLen = static_cast<int>(input_size);
+  dec_input.pData = input_buffer.data();
+  
+  int ret = decoder_->DecodeFrame2(&dec_input, &dec_output_info_);
+  if (ret != 0) {
+    return CodecError::kStreamError;
+  }
+  
+  // Check if we got a decoded frame
+  if (dec_output_info_.iBufferStatus == 1 && dec_output_info_.pDstY) {
+    auto decoded = std::make_shared<RawFrameImpl>();
+    VideoFrameInfo info;
+    info.width = dec_output_info_.iWidth;
+    info.height = dec_output_info_->iHeight;
+    info.format = VideoPixelFormat::kI420;
+    info.timestamp_us = input->GetTimestampUs();
+    info.keyframe = input->IsKeyframe();
+    info.stride[0] = dec_output_info_.iStride[0];
+    info.stride[1] = dec_output_info_.iStride[1];
+    info.stride[2] = dec_output_info_.iStride[2];
+    
+    decoded->SetVideoInfo(info);
+    decoded->SetTimestampUs(input->GetTimestampUs());
+    
+    // Copy frame data
+    size_t y_size = info.width * info.height;
+    size_t uv_size = y_size / 4;
+    std::vector<uint8_t> frame_data(y_size + uv_size * 2);
+    
+    // Copy Y plane
+    memcpy(frame_data.data(), dec_output_info_.pDstY, y_size);
+    // Copy U plane
+    memcpy(frame_data.data() + y_size, dec_output_info_.pDstU, uv_size);
+    // Copy V plane
+    memcpy(frame_data.data() + y_size + uv_size, dec_output_info_.pDstV, uv_size);
+    
+    decoded->SetData(frame_data.data(), frame_data.size());
+    
+    stats_.decoded_frames++;
+    stats_.decoded_bytes += input_size;
+    
+    *output = decoded;
+    return CodecError::kOk;
+  }
+  
+  return CodecError::kOk;  // Need more data
+  
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (!context_ || !packet_) {
     return CodecError::kNotInitialized;
@@ -268,6 +337,20 @@ CodecError H264Decoder::SetParameterSets(const uint8_t* sps, size_t sps_size,
     pps_.assign(pps, pps + pps_size);
   }
   
+#ifdef MINIRTC_USE_H264
+  if (decoder_) {
+    // Set decoder parameter sets
+    SDecParam dec_params;
+    memset(&dec_params, 0, sizeof(dec_params));
+    dec_params.pSpsBuffer = sps_.data();
+    dec_params.uiSpsBufferLen = static_cast<unsigned int>(sps_size);
+    dec_params.pPpsBuffer = pps_.data();
+    dec_params.uiPpsBufferLen = static_cast<unsigned int>(pps_size);
+    
+    decoder_->SetOption(DECODER_OPTION_PARAM, &dec_params);
+  }
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (context_) {
     // Extract and set extradata
@@ -353,6 +436,46 @@ int H264Decoder::GetDecodingPictureCount() const {
 }
 
 CodecError H264Decoder::CreateDecoder() {
+#ifdef MINIRTC_USE_H264
+  if (decoder_) {
+    decoder_->Uninitialize();
+    decoder_ = nullptr;
+  }
+  
+  // Create decoder
+  int ret = WelsCreateSVCDecoder(&decoder_);
+  if (ret != 0 || !decoder_) {
+    state_ = CodecState::kError;
+    return CodecError::kNotSupported;
+  }
+  
+  // Set decoder parameters
+  memset(&dec_params_, 0, sizeof(dec_params_));
+  dec_params_.iPicWidth = config_.width;
+  dec_params_.iPicHeight = config_.height;
+  dec_params_.uiTargetDqLayers = 1;  // Decode all layers
+  dec_params_.eEcMode = ERROR_CON_SLICE;  // Error concealment mode
+  dec_params_.iOutputColorFormat = videoFormatI420;
+  
+  if (config_.low_latency) {
+    dec_params_.bLowLatency = true;
+  }
+  
+  // Initialize decoder
+  ret = decoder_->Initialize(&dec_params_);
+  if (ret != 0) {
+    decoder_->Release();
+    decoder_ = nullptr;
+    state_ = CodecState::kError;
+    return CodecError::kHardwareError;
+  }
+  
+  is_valid_ = true;
+  state_ = CodecState::kInitialized;
+  return CodecError::kOk;
+  
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (context_) {
     avcodec_free_context(&context_);
@@ -409,6 +532,13 @@ CodecError H264Decoder::CreateDecoder() {
 }
 
 CodecError H264Decoder::DestroyDecoder() {
+#ifdef MINIRTC_USE_H264
+  if (decoder_) {
+    decoder_->Release();
+    decoder_ = nullptr;
+  }
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (frame_) {
     av_frame_free(&frame_);

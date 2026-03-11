@@ -10,6 +10,11 @@
 #include "decoder_config.h"
 #include <functional>
 
+#ifdef MINIRTC_USE_H264
+#include <wels/codec_api.h>
+#include <wels/codec_def.h>
+#endif
+
 #ifdef MINIRTC_USE_FFMPEG
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -90,6 +95,12 @@ class H264Decoder : public IDecoder {
   CodecError CreateDecoder();
   CodecError DestroyDecoder();
   
+#ifdef MINIRTC_USE_H264
+  ISVCDecoder* decoder_ = nullptr;
+  SDecParam dec_params_;
+  SBufferInfo dec_output_info_;
+#endif
+
 #ifdef MINIRTC_USE_FFMPEG
   const AVCodec* codec_ = nullptr;
   AVCodecContext* context_ = nullptr;

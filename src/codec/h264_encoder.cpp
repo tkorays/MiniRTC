@@ -98,6 +98,73 @@ CodecError H264Encoder::Encode(std::shared_ptr<RawFrame> input,
     return CodecError::kNotInitialized;
   }
   
+#ifdef MINIRTC_USE_H264
+  if (!encoder_) {
+    return CodecError::kNotInitialized;
+  }
+  
+  const VideoFrameInfo& info = input->GetVideoInfo();
+  
+  // Prepare source picture
+  memset(&src_pic_, 0, sizeof(src_pic_));
+  src_pic_.iPicWidth = info.width;
+  src_pic_.iPicHeight = info.height;
+  src_pic_.iColorFormat = videoFormatI420;
+  
+  // Copy Y plane
+  const uint8_t* y_data = input->GetPlaneData(0);
+  if (y_data) {
+    src_pic_.pData[0] = const_cast<uint8_t*>(y_data);
+    src_pic_.iStride[0] = info.stride[0];
+  }
+  
+  // Copy U plane
+  const uint8_t* u_data = input->GetPlaneData(1);
+  if (u_data) {
+    src_pic_.pData[1] = const_cast<uint8_t*>(u_data);
+    src_pic_.iStride[1] = info.stride[1];
+  }
+  
+  // Copy V plane
+  const uint8_t* v_data = input->GetPlaneData(2);
+  if (v_data) {
+    src_pic_.pData[2] = const_cast<uint8_t*>(v_data);
+    src_pic_.iStride[2] = info.stride[2];
+  }
+  
+  // Encode frame
+  memset(&enc_output_info_, 0, sizeof(enc_output_info_));
+  int ret = encoder_->EncodeFrame(&src_pic_, &enc_output_info_);
+  if (ret != 0) {
+    return CodecError::kStreamError;
+  }
+  
+  // Create output frame
+  auto encoded = std::make_shared<EncodedFrameImpl>(MediaType::kVideo);
+  encoded->SetTimestampUs(input->GetTimestampUs());
+  encoded->SetFrameNumber(++frame_counter_);
+  
+  // Process NAL units
+  for (int i = 0; i < enc_output_info_.iNalCount; i++) {
+    encoded->AddNALUnit(enc_output_info_.pNalList[i].pBsBuf, 
+                        enc_output_info_.pNalList[i].iNalSize);
+    
+    // Check if this is an IDR frame (keyframe)
+    // NAL type 5 = IDR slice
+    uint8_t nal_type = enc_output_info_.pNalList[i].pBsBuf[4] & 0x1F;
+    if (nal_type == 5 || nal_type == 7) {
+      encoded->SetKeyframe(true);
+    }
+  }
+  
+  // Update stats
+  stats_.encoded_frames++;
+  
+  *output = encoded;
+  return CodecError::kOk;
+  
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (!context_ || !frame_ || !packet_) {
     return CodecError::kNotInitialized;
@@ -190,6 +257,41 @@ CodecError H264Encoder::EncodeBatch(const std::vector<std::shared_ptr<RawFrame>>
 }
 
 CodecError H264Encoder::Flush(std::vector<std::shared_ptr<EncodedFrame>>* outputs) {
+#ifdef MINIRTC_USE_H264
+  if (!encoder_ || !outputs) {
+    return CodecError::kInvalidParam;
+  }
+  
+  outputs->clear();
+  
+  // Flush encoder by sending NULL frame
+  memset(&src_pic_, 0, sizeof(src_pic_));
+  src_pic_.iPicWidth = config_.width;
+  src_pic_.iPicHeight = config_.height;
+  src_pic_.iColorFormat = videoFormatI420;
+  
+  memset(&enc_output_info_, 0, sizeof(enc_output_info_));
+  int ret = encoder_->EncodeFrame(&src_pic_, &enc_output_info_);
+  
+  while (ret == 0 && enc_output_info_.iNalCount > 0) {
+    auto encoded = std::make_shared<EncodedFrameImpl>(MediaType::kVideo);
+    
+    for (int i = 0; i < enc_output_info_.iNalCount; i++) {
+      encoded->AddNALUnit(enc_output_info_.pNalList[i].pBsBuf,
+                          enc_output_info_.pNalList[i].iNalSize);
+    }
+    
+    encoded->SetFrameNumber(++frame_counter_);
+    outputs->push_back(encoded);
+    
+    memset(&enc_output_info_, 0, sizeof(enc_output_info_));
+    ret = encoder_->EncodeFrame(nullptr, &enc_output_info_);
+  }
+  
+  return CodecError::kOk;
+
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (!context_ || !outputs) {
     return CodecError::kInvalidParam;
@@ -234,6 +336,12 @@ CodecError H264Encoder::Flush(std::vector<std::shared_ptr<EncodedFrame>>* output
 void H264Encoder::RequestKeyframe() {
   if (idr_request_enabled_) {
     // Force IDR frame
+#ifdef MINIRTC_USE_H264
+    if (encoder_) {
+      encoder_->EncodeParameterSets(true);
+    }
+#endif
+
 #ifdef MINIRTC_USE_FFMPEG
     if (context_) {
       context_->internal_->opts->flags &= ~AV_CODEC_FLAG2_NOT_B_FRAME;
@@ -246,6 +354,16 @@ CodecError H264Encoder::SetBitrate(uint32_t target_kbps, uint32_t max_kbps) {
   config_.target_bitrate_kbps = target_kbps;
   config_.max_bitrate_kbps = max_kbps;
   
+#ifdef MINIRTC_USE_H264
+  if (encoder_) {
+    SEncParamBase params;
+    memset(&params, 0, sizeof(params));
+    params.iTargetBitrate = target_kbps * 1000;
+    params.iMaxBitrate = max_kbps * 1000;
+    encoder_->SetOption(ENCODER_OPTION_PARAM, &params);
+  }
+#endif
+
 #ifdef MINIRTC_USE_FFMPEG
   if (context_) {
     context_->bit_rate = target_kbps * 1000;
@@ -260,6 +378,15 @@ CodecError H264Encoder::SetBitrate(uint32_t target_kbps, uint32_t max_kbps) {
 CodecError H264Encoder::SetFramerate(uint32_t fps) {
   config_.framerate = fps;
   
+#ifdef MINIRTC_USE_H264
+  if (encoder_) {
+    SEncParamBase params;
+    memset(&params, 0, sizeof(params));
+    params.fMaxFrameRate = static_cast<float>(fps);
+    encoder_->SetOption(ENCODER_OPTION_PARAM, &params);
+  }
+#endif
+
 #ifdef MINIRTC_USE_FFMPEG
   if (context_) {
     context_->time_base = {1, static_cast<int>(fps)};
@@ -327,6 +454,11 @@ uint32_t H264Encoder::GetMaxBitrate() const {
 }
 
 bool H264Encoder::IsHardwareAccelerationAvailable() const {
+#ifdef MINIRTC_USE_H264
+  // OpenH264 is software encoder, no HW acceleration
+  return false;
+#endif
+
 #ifdef MINIRTC_USE_FFMPEG
   // Check for hardware encoder
   return false;  // Simplified
@@ -336,6 +468,63 @@ bool H264Encoder::IsHardwareAccelerationAvailable() const {
 }
 
 CodecError H264Encoder::CreateEncoder() {
+#ifdef MINIRTC_USE_H264
+  if (encoder_) {
+    encoder_->Uninitialize();
+    encoder_ = nullptr;
+  }
+  
+  // Create encoder
+  int ret = WelsCreateSVCEncoder(&encoder_);
+  if (ret != 0 || !encoder_) {
+    state_ = CodecState::kError;
+    return CodecError::kNotSupported;
+  }
+  
+  // Set encoder parameters
+  memset(&enc_params_, 0, sizeof(enc_params_));
+  enc_params_.iUsageType = CAMERA_VIDEO_REAL_TIME;
+  enc_params_.fMaxFrameRate = static_cast<float>(config_.framerate);
+  enc_params_.iTargetBitrate = config_.target_bitrate_kbps * 1000;
+  enc_params_.iMaxBitrate = config_.max_bitrate_kbps * 1000;
+  enc_params_.iPicWidth = config_.width;
+  enc_params_.iPicHeight = config_.height;
+  enc_params_.iRCMode = RC_BITRATE_MODE;
+  
+  // Profile
+  if (config_.profile == "baseline") {
+    enc_params_.eProfile = PROFILE_SCALABLE_BASELINE;
+  } else if (config_.profile == "main") {
+    enc_params_.eProfile = PROFILE_SCALABLE_MAIN;
+  } else {
+    enc_params_.eProfile = PROFILE_SCALABLE_HIGH;
+  }
+  
+  // Entropy mode
+  if (config_.entropy_mode == "cavlc") {
+    enc_params_.iEntropyMode = 0;  // CAVLC
+  } else {
+    enc_params_.iEntropyMode = 1;  // CABAC
+  }
+  
+  // Set encoder param
+  ret = encoder_->Initialize(&enc_params_);
+  if (ret != 0) {
+    encoder_->Release();
+    encoder_ = nullptr;
+    state_ = CodecState::kError;
+    return CodecError::kHardwareError;
+  }
+  
+  // Request SPS/PPS
+  encoder_->EncodeParameterSets(true);
+  
+  is_valid_ = true;
+  state_ = CodecState::kInitialized;
+  return UpdateEncoderSettings();
+  
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (context_) {
     avcodec_free_context(&context_);
@@ -416,6 +605,13 @@ CodecError H264Encoder::CreateEncoder() {
 }
 
 CodecError H264Encoder::DestroyEncoder() {
+#ifdef MINIRTC_USE_H264
+  if (encoder_) {
+    encoder_->Release();
+    encoder_ = nullptr;
+  }
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (frame_) {
     av_frame_free(&frame_);
@@ -439,6 +635,24 @@ CodecError H264Encoder::DestroyEncoder() {
 }
 
 CodecError H264Encoder::UpdateEncoderSettings() {
+#ifdef MINIRTC_USE_H264
+  if (!encoder_) {
+    return CodecError::kNotInitialized;
+  }
+  
+  // Update bitrate settings
+  SEncParamBase params;
+  memset(&params, 0, sizeof(params));
+  encoder_->GetOption(ENCODER_OPTION_PARAM, &params);
+  
+  params.iTargetBitrate = config_.target_bitrate_kbps * 1000;
+  params.iMaxBitrate = config_.max_bitrate_kbps * 1000;
+  params.fMaxFrameRate = static_cast<float>(config_.framerate);
+  
+  encoder_->SetOption(ENCODER_OPTION_PARAM, &params);
+  
+#endif  // MINIRTC_USE_H264
+
 #ifdef MINIRTC_USE_FFMPEG
   if (!context_) {
     return CodecError::kNotInitialized;
