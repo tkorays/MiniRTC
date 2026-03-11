@@ -139,19 +139,19 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
     }
   }
 
-  // Serialize if needed
-  if (packet->GetSize() == 0) {
-    packet->Serialize();
-  }
-
-  // Set SSRC if not set
+  // Set SSRC if not set (before serialization)
   if (packet->GetSsrc() == 0) {
     packet->SetSsrc(config_.ssrc);
   }
 
-  // Set sequence number if not set
+  // Set sequence number if not set (before serialization)
   if (packet->GetSequenceNumber() == 0) {
     packet->SetSequenceNumber(sequence_number_++);
+  }
+
+  // Serialize if needed (after setting SSRC/seq)
+  if (packet->GetSize() == 0) {
+    packet->Serialize();
   }
 
   // Loopback mode: put packet in local queue for receiving
@@ -168,6 +168,7 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
       fprintf(stderr, "[RTPTransport] SendRtpPacket: queued packet, queue size=%zu\n", loopback_queue_.size());
     }
     loopback_cv_.notify_one();
+    fprintf(stderr, "[RTPTransport] SendRtpPacket: notified, queue_size=%zu\n", loopback_queue_.size());
     
     UpdateSendStats(packet->GetSize());
     return TransportError::kOk;
@@ -351,7 +352,56 @@ void RTPTransport::ResetStats() {
 
 TransportError RTPTransport::SetConfig(const RtpTransportConfig& config) {
   std::lock_guard<std::mutex> lock(mutex_);
+  
+  // Store old enable_nack state to detect changes
+  bool old_enable_nack = config_.enable_nack;
   config_ = config;
+  
+  // Initialize NACK module if enabled
+  if (config.enable_nack && !old_enable_nack) {
+    enable_nack_ = true;
+    nack_module_ = NackModuleFactory::Create();
+    
+    if (nack_module_) {
+      NackConfig nack_cfg;
+      nack_cfg.enable_nack = true;
+      nack_cfg.enable_rtx = true;
+      nack_cfg.mode = NackMode::kAdaptive;
+      nack_cfg.max_retransmissions = 3;
+      nack_cfg.rtt_estimate_ms = 100;
+      nack_cfg.nack_timeout_ms = 200;
+      nack_cfg.max_nack_list_size = 250;
+      nack_cfg.nack_batch_interval_ms = 5;
+      nack_cfg.nack_audio = true;
+      nack_cfg.nack_video = true;
+      
+      // Set up callbacks for NACK and RTX
+      nack_module_->SetOnNackRequestCallback([this](const std::vector<uint16_t>& seq_nums) {
+        // Send NACK feedback via RTCP
+        // This would typically be handled by the RTCP module
+        fprintf(stderr, "[RTPTransport] NACK requested for %zu packets\n", seq_nums.size());
+      });
+      
+      nack_module_->SetOnRtxPacketCallback([this](std::shared_ptr<RtpPacket> packet) {
+        // Handle RTX packet (retransmitted packet)
+        fprintf(stderr, "[RTPTransport] RTX packet received: seq=%u\n", 
+                packet ? packet->GetSequenceNumber() : 0);
+      });
+      
+      nack_module_->Initialize(nack_cfg);
+      nack_module_->Start();
+      fprintf(stderr, "[RTPTransport] NACK module initialized\n");
+    }
+  } else if (!config.enable_nack && old_enable_nack) {
+    // Disable NACK
+    enable_nack_ = false;
+    if (nack_module_) {
+      nack_module_->Stop();
+      nack_module_->Reset();
+      nack_module_.reset();
+    }
+  }
+  
   return TransportError::kOk;
 }
 
