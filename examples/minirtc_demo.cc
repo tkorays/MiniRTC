@@ -1217,31 +1217,40 @@ int main(int argc, char* argv[]) {
     }
     
     // 设置RTP Transport回调 (Loopback模式使用内部接收)
+    std::shared_ptr<ITransportCallback> rtp_callback;
     if (mode == "loopback" && g_rtp_transport) {
         // 创建回调类来处理接收的RTP包
         class RtpRecvCallback : public ITransportCallback {
         public:
             std::shared_ptr<ITrack> audio_track;
             std::shared_ptr<ITrack> video_track;
+            int recv_count = 0;
             
             void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {
                 if (!packet) return;
+                recv_count++;
                 uint32_t ssrc = packet->GetSsrc();
+                std::cout << "[RTP Callback] Received packet SSRC=" << ssrc << " seq=" << packet->GetSequenceNumber() << " count=" << recv_count << std::endl;
                 if (audio_track && ssrc == 1001) {
                     audio_track->OnRtpPacketReceived(packet);
                 } else if (video_track && ssrc == 1002) {
                     video_track->OnRtpPacketReceived(packet);
+                } else {
+                    std::cout << "[RTP Callback] Unknown SSRC: " << ssrc << std::endl;
                 }
             }
             void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {}
-            void OnTransportError(TransportError error, const std::string& msg) override {}
+            void OnTransportError(TransportError error, const std::string& msg) override {
+                std::cout << "[RTP Callback] Transport error: " << static_cast<int>(error) << " msg=" << msg << std::endl;
+            }
             void OnTransportStateChanged(TransportState state) override {}
         };
         
         auto callback = std::make_shared<RtpRecvCallback>();
         callback->audio_track = audio_track_ptr;
         callback->video_track = video_track_ptr;
-        g_rtp_transport->SetCallback(callback);
+        rtp_callback = callback;
+        g_rtp_transport->SetCallback(rtp_callback);
         
         // 启动RTPTransport的接收
         g_rtp_transport->StartReceiving();
