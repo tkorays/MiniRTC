@@ -32,7 +32,10 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
     return TransportError::kAlreadyExists;
   }
 
-  // Store config - copy all relevant fields from input config
+  // Try to cast to RtpTransportConfig to get extended fields
+  const RtpTransportConfig* rtp_config = dynamic_cast<const RtpTransportConfig*>(&config);
+  
+  // Store config - copy all relevant fields
   config_ = RtpTransportConfig();
   config_.type = config.type;
   config_.local_addr = config.local_addr;
@@ -40,16 +43,19 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
   config_.socket_buffer_size = config.socket_buffer_size;
   config_.enable_ipv6 = config.enable_ipv6;
   config_.timeout_ms = config.timeout_ms;
-  // Copy RtpTransportConfig specific fields
-  config_.ssrc = config.ssrc;
-  config_.rtcp_port = config.rtcp_port;
-  config_.enable_rtcp = config.enable_rtcp;
-  config_.enable_nack = config.enable_nack;
-  config_.enable_fec = config.enable_fec;
-  config_.max_packet_size = config.max_packet_size;
-  config_.enable_rtx = config.enable_rtx;
-  config_.rtx_payload_type = config.rtx_payload_type;
-  config_.loopback_mode = config.loopback_mode;
+  
+  // Copy RtpTransportConfig specific fields if available
+  if (rtp_config) {
+    config_.ssrc = rtp_config->ssrc;
+    config_.rtcp_port = rtp_config->rtcp_port;
+    config_.enable_rtcp = rtp_config->enable_rtcp;
+    config_.enable_nack = rtp_config->enable_nack;
+    config_.enable_fec = rtp_config->enable_fec;
+    config_.max_packet_size = rtp_config->max_packet_size;
+    config_.enable_rtx = rtp_config->enable_rtx;
+    config_.rtx_payload_type = rtp_config->rtx_payload_type;
+    config_.loopback_mode = rtp_config->loopback_mode;
+  }
 
   // Check if loopback mode is requested
   bool is_loopback = config_.loopback_mode;
@@ -164,6 +170,7 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
 
   // Loopback mode: put packet in local queue for receiving
   if (loopback_mode_.load()) {
+    fprintf(stderr, "[RTPTransport] SendRtpPacket: loopback mode, queuing packet\n");
     std::vector<uint8_t> data(packet->GetData(), packet->GetData() + packet->GetSize());
     NetworkAddress from;
     from.ip = "127.0.0.1";
@@ -172,6 +179,7 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
     {
       std::lock_guard<std::mutex> lock(loopback_mutex_);
       loopback_queue_.push_back({std::move(data), from});
+      fprintf(stderr, "[RTPTransport] SendRtpPacket: queued packet, queue size=%zu\n", loopback_queue_.size());
     }
     loopback_cv_.notify_one();
     
@@ -208,6 +216,7 @@ TransportError RTPTransport::ReceiveRtpPacket(
 
   // Loopback mode: receive from local queue
   if (loopback_mode_.load()) {
+    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: loopback mode, timeout=%d\n", timeout_ms);
     std::unique_lock<std::mutex> lock(loopback_mutex_);
     
     // Wait for packet with timeout
