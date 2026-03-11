@@ -40,6 +40,8 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
   config_.socket_buffer_size = config.socket_buffer_size;
   config_.enable_ipv6 = config.enable_ipv6;
   config_.timeout_ms = config.timeout_ms;
+  config_.loopback_mode = config.loopback_mode;
+  config_.ssrc = config.ssrc;
 
   // Check if loopback mode is requested
   bool is_loopback = config_.loopback_mode;
