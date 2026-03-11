@@ -155,6 +155,9 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
 
   // Loopback mode: put packet in local queue for receiving
   if (loopback_mode_.load()) {
+    // Ensure packet is serialized before queueing
+    packet->Serialize();
+    
     NetworkAddress from;
     from.ip = "127.0.0.1";
     from.port = config_.local_addr.port;
