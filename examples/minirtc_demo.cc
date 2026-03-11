@@ -1216,31 +1216,35 @@ int main(int argc, char* argv[]) {
         });
     }
     
-    // 启动RTP接收线程 (Loopback模式)
-    std::thread rtp_recv_thread;
+    // 设置RTP Transport回调 (Loopback模式使用内部接收)
     if (mode == "loopback" && g_rtp_transport) {
-        rtp_recv_thread = std::thread([&]() {
-            while (g_running) {
-                std::shared_ptr<RtpPacket> packet;
-                NetworkAddress from;
-                
-                // 从RTPTransport接收包 (使用loopback模式)
-                TransportError error = g_rtp_transport->ReceiveRtpPacket(&packet, &from, 100);
-                
-                if (error == TransportError::kOk && packet) {
-                    // 根据SSRC判断是音频还是视频
-                    uint32_t ssrc = packet->GetSsrc();
-                    if (audio_track_ptr && ssrc == 1001) {
-                        audio_track_ptr->OnRtpPacketReceived(packet);
-                    } else if (video_track_ptr && ssrc == 1002) {
-                        video_track_ptr->OnRtpPacketReceived(packet);
-                    }
-                } else if (error == TransportError::kNotInitialized) {
-                    // Transport closed, exit loop
-                    break;
+        // 创建回调类来处理接收的RTP包
+        class RtpRecvCallback : public ITransportCallback {
+        public:
+            std::shared_ptr<ITrack> audio_track;
+            std::shared_ptr<ITrack> video_track;
+            
+            void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {
+                if (!packet) return;
+                uint32_t ssrc = packet->GetSsrc();
+                if (audio_track && ssrc == 1001) {
+                    audio_track->OnRtpPacketReceived(packet);
+                } else if (video_track && ssrc == 1002) {
+                    video_track->OnRtpPacketReceived(packet);
                 }
             }
-        });
+            void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {}
+            void OnTransportError(TransportError error, const std::string& msg) override {}
+            void OnTransportStateChanged(TransportState state) override {}
+        };
+        
+        auto callback = std::make_shared<RtpRecvCallback>();
+        callback->audio_track = audio_track_ptr;
+        callback->video_track = video_track_ptr;
+        g_rtp_transport->SetCallback(callback);
+        
+        // 启动RTPTransport的接收
+        g_rtp_transport->StartReceiving();
     }
     
     // Start connection
@@ -1306,14 +1310,6 @@ int main(int argc, char* argv[]) {
     }
     
     pc->Stop();
-    
-    // 停止RTP接收线程 (加超时避免卡住)
-    if (rtp_recv_thread.joinable()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        if (rtp_recv_thread.joinable()) {
-            rtp_recv_thread.detach();  // 强制分离
-        }
-    }
     
     // 停止UDP环回
     if (g_udp_loopback) {
