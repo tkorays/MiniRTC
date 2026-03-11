@@ -1399,6 +1399,19 @@ int main(int argc, char* argv[]) {
     // 先停止stats线程（使用atomic flag快速唤醒）
     stats_thread_running.store(false);
     
+    // 先停止JitterBuffer消费线程
+    jitter_thread_running.store(false);
+    
+    // 停止JitterBuffer
+    if (g_audio_jitter_buffer) {
+        g_audio_jitter_buffer->Stop();
+        g_audio_jitter_buffer.reset();
+    }
+    if (g_video_jitter_buffer) {
+        g_video_jitter_buffer->Stop();
+        g_video_jitter_buffer.reset();
+    }
+    
     // Close transport FIRST to wake up receive thread
     if (g_rtp_transport) {
         g_rtp_transport->Close();

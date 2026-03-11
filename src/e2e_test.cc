@@ -421,6 +421,20 @@ TestResult E2ETest::TestLoopback(int duration_sec) {
     
     Stop();
     
+    // Print RTCP stats if enabled
+    if (config_.enable_rtcp) {
+        if (rtcp_module_a_) {
+            auto stats_a = rtcp_module_a_->GetStats();
+            std::cout << "[E2ETest] RTCP Module A - SR sent: " << stats_a.sr_sent 
+                      << ", RR sent: " << stats_a.rr_sent << std::endl;
+        }
+        if (rtcp_module_b_) {
+            auto stats_b = rtcp_module_b_->GetStats();
+            std::cout << "[E2ETest] RTCP Module B - SR sent: " << stats_b.sr_sent 
+                      << ", RR sent: " << stats_b.rr_sent << std::endl;
+        }
+    }
+    
     // Calculate results
     auto stats_b = transport_b_->GetStats();
     auto recv_stats_a = transport_a_->GetRtpReceiveStats();
