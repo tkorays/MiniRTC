@@ -40,6 +40,9 @@ add_library(minirtc_codec OBJECT
     
     # ICE module
     ice.cc
+    
+    # Memory Pool module
+    memory_pool.cc
 )
 
 target_include_directories(minirtc_codec PUBLIC

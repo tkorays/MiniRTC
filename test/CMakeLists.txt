@@ -201,3 +201,67 @@ target_include_directories(minirtc_e2e_framework_test PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 add_test(NAME minirtc_e2e_framework_test COMMAND minirtc_e2e_framework_test)
+
+# ============================================================================
+# New Module Tests - ICE, Bandwidth Estimator, DTLS/SRTP, Memory Pool
+# ============================================================================
+
+# ICE tests
+add_executable(minirtc_ice_test 
+    test_ice.cc
+)
+target_link_libraries(minirtc_ice_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_ice_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_ice_test COMMAND minirtc_ice_test)
+
+# Bandwidth Estimator tests
+add_executable(minirtc_bandwidth_estimator_test 
+    test_bandwidth_estimator.cc
+)
+target_link_libraries(minirtc_bandwidth_estimator_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_bandwidth_estimator_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_bandwidth_estimator_test COMMAND minirtc_bandwidth_estimator_test)
+
+# DTLS/SRTP tests
+add_executable(minirtc_dtls_srtp_test 
+    test_dtls_srtp.cc
+)
+target_link_libraries(minirtc_dtls_srtp_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_dtls_srtp_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_dtls_srtp_test COMMAND minirtc_dtls_srtp_test)
+
+# Memory Pool tests
+add_executable(minirtc_memory_pool_test 
+    test_memory_pool.cc
+)
+target_link_libraries(minirtc_memory_pool_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_memory_pool_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_memory_pool_test COMMAND minirtc_memory_pool_test)

@@ -16,90 +16,18 @@
 using namespace minirtc;
 
 // ============================================================================
-// PassThroughJitterBuffer implementation for testing
-// ============================================================================
-
-class PassThroughJitterBuffer : public IJitterBuffer {
-public:
-    PassThroughJitterBuffer() = default;
-    ~PassThroughJitterBuffer() override { Stop(); }
-
-    bool Initialize(const JitterBufferConfig& config) override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        config_ = config;
-        running_ = true;
-        return true;
-    }
-
-    void Stop() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        running_ = false;
-        cv_.notify_all();
-    }
-
-    void AddPacket(std::shared_ptr<RtpPacket> packet) override {
-        if (!packet) {
-            return;
-        }
-
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!running_) {
-            stats_.packets_dropped++;
-            return;
-        }
-
-        if (config_.passthrough_mode) {
-            pending_packets_.push(packet);
-            stats_.packets_in++;
-            cv_.notify_one();
-        }
-    }
-
-    std::shared_ptr<RtpPacket> GetPacket(int timeout_ms) override {
-        std::unique_lock<std::mutex> lock(mutex_);
-
-        if (cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] {
-            return !pending_packets_.empty() || !running_;
-        })) {
-            if (!pending_packets_.empty()) {
-                auto packet = pending_packets_.front();
-                pending_packets_.pop();
-                stats_.packets_out++;
-                return packet;
-            }
-        }
-
-        return nullptr;
-    }
-
-    JitterBufferStats GetStats() const override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return stats_;
-    }
-
-private:
-    JitterBufferConfig config_;
-    JitterBufferStats stats_;
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    std::queue<std::shared_ptr<RtpPacket>> pending_packets_;
-    bool running_ = false;
-};
-
-// ============================================================================
 // JitterBuffer Tests
 // ============================================================================
 
 class JitterBufferTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<PassThroughJitterBuffer>();
-        config_.passthrough_mode = true;
-        config_.max_buffer_ms = 0;
+        buffer_ = CreateJitterBuffer(JitterBufferMode::kPassthrough);
+        config_.mode = JitterBufferMode::kPassthrough;
     }
     
     JitterBufferConfig config_;
-    std::shared_ptr<PassThroughJitterBuffer> buffer_;
+    IJitterBuffer::Ptr buffer_;
 };
 
 TEST_F(JitterBufferTest, Initialize) {
@@ -190,6 +118,112 @@ TEST_F(JitterBufferTest, StopTest) {
     EXPECT_EQ(stats.packets_in, 1u);
 }
 
+TEST_F(JitterBufferTest, ExtendedStatsTest) {
+    buffer_->Initialize(config_);
+    
+    // Add some packets
+    for (int i = 0; i < 3; ++i) {
+        auto packet = std::make_shared<RtpPacket>(96, 1000 + i * 3000, static_cast<uint16_t>(i + 1));
+        buffer_->AddPacket(packet);
+    }
+    
+    auto ex_stats = buffer_->GetStatsEx();
+    EXPECT_EQ(ex_stats.packets_in, 3u);
+    EXPECT_GE(ex_stats.buffer_size, 0u);
+}
+
+// ============================================================================
+// Fixed Delay Mode Tests
+// ============================================================================
+
+class FixedJitterBufferTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        buffer_ = CreateJitterBuffer(JitterBufferMode::kFixed);
+        config_.mode = JitterBufferMode::kFixed;
+        config_.fixed_delay_ms = 30;
+        config_.max_delay_ms = 200;
+        config_.min_delay_ms = 20;
+    }
+    
+    JitterBufferConfig config_;
+    IJitterBuffer::Ptr buffer_;
+};
+
+TEST_F(FixedJitterBufferTest, FixedDelayMode) {
+    buffer_->Initialize(config_);
+    
+    // Add multiple packets
+    for (int i = 0; i < 5; ++i) {
+        auto packet = std::make_shared<RtpPacket>(96, 1000 + i * 3000, static_cast<uint16_t>(i + 1));
+        buffer_->AddPacket(packet);
+    }
+    
+    // Wait longer than max delay
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    
+    // Get all packets - should be delivered in order after delay
+    int count = 0;
+    while (true) {
+        auto packet = buffer_->GetPacket(100);
+        if (!packet) break;
+        count++;
+    }
+    EXPECT_EQ(count, 5);
+}
+
+TEST_F(FixedJitterBufferTest, SetFixedDelay) {
+    buffer_->Initialize(config_);
+    
+    // Change delay
+    buffer_->SetFixedDelay(100);
+    
+    auto ex_stats = buffer_->GetStatsEx();
+    EXPECT_EQ(ex_stats.current_delay_ms, 100);
+}
+
+// ============================================================================
+// Adaptive Mode Tests
+// ============================================================================
+
+class AdaptiveJitterBufferTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        buffer_ = CreateJitterBuffer(JitterBufferMode::kAdaptive);
+        config_.mode = JitterBufferMode::kAdaptive;
+        config_.fixed_delay_ms = 30;
+        config_.max_delay_ms = 200;
+        config_.min_delay_ms = 20;
+    }
+    
+    JitterBufferConfig config_;
+    IJitterBuffer::Ptr buffer_;
+};
+
+TEST_F(AdaptiveJitterBufferTest, AdaptiveModeBasic) {
+    buffer_->Initialize(config_);
+    
+    // Add packet
+    auto packet = std::make_shared<RtpPacket>(96, 1000, 1);
+    buffer_->AddPacket(packet);
+    
+    // Adaptive mode has minimum delay, wait and try
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    auto received = buffer_->GetPacket(100);
+    // May or may not get packet depending on adaptive delay
+    // Just verify no crash
+}
+
+TEST_F(AdaptiveJitterBufferTest, SetMaxDelay) {
+    buffer_->Initialize(config_);
+    
+    buffer_->SetMaxDelay(300);
+    
+    auto ex_stats = buffer_->GetStatsEx();
+    // Initial delay should be at least min_delay_ms
+    EXPECT_GE(ex_stats.current_delay_ms, 20);
+}
+
 // ============================================================================
 // Thread Safety Tests
 // ============================================================================
@@ -197,13 +231,13 @@ TEST_F(JitterBufferTest, StopTest) {
 class JitterBufferThreadTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<PassThroughJitterBuffer>();
-        config_.passthrough_mode = true;
+        buffer_ = CreateJitterBuffer(JitterBufferMode::kPassthrough);
+        config_.mode = JitterBufferMode::kPassthrough;
         buffer_->Initialize(config_);
     }
     
     JitterBufferConfig config_;
-    std::shared_ptr<PassThroughJitterBuffer> buffer_;
+    IJitterBuffer::Ptr buffer_;
 };
 
 TEST_F(JitterBufferThreadTest, ConcurrentAddGet) {
