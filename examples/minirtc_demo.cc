@@ -37,7 +37,6 @@
 #include "minirtc/ice.h"
 #include "minirtc/jitter_buffer.h"
 #include "minirtc/bandwidth_estimator.h"
-#include "minirtc/transport/rtcp_packet.h"
 
 // 手动声明需要的类型，避免包含transport_types.h带来的重定义问题
 namespace minirtc {
@@ -1311,60 +1310,76 @@ int main(int argc, char* argv[]) {
             void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {
                 if (!data || size == 0 || !bandwidth_estimator) return;
                 
-                // 解析RTCP包 - TODO: 暂时跳过
-                std::vector<std::shared_ptr<RtcpPacket>> packets;
-                // RtcpParser parser;
-                // if (!parser.Parse(data, size, packets)) {
-                //     return;
-                // }
-                // 
-                // // 处理每个RTCP包
-                // for (const auto& packet : packets) {
-                if (!packets.empty()) {
-                    // 暂时不处理RTCP包
-                }
+                // 简单手动解析RTCP包
+                // RTCP RR包格式: 
+                // Byte 0: V=2, P=0, RC (5位报告块计数)
+                // Byte 1: PT = 201 (RR)
+                // Byte 2-3: 长度
+                // Byte 4-7: 发送者SSRC
+                // 每个报告块24字节
                 
-                // 处理每个RTCP包
-                for (const auto& packet : packets) {
-                    if (!packet) continue;
+                size_t offset = 0;
+                while (offset + 8 <= size) {
+                    // 检查版本和包类型
+                    uint8_t first_byte = data[offset];
+                    uint8_t pt = data[offset + 1];
+                    uint16_t length = (data[offset + 2] << 8) | data[offset + 3];
                     
-                    // 处理Receiver Report (RR)
-                    if (packet->GetType() == RtcpPacketType::kRR) {
-                        auto rr = std::dynamic_pointer_cast<RtcpRrPacket>(packet);
-                        if (rr) {
-                            auto report_blocks = rr->GetReportBlocks();
-                            for (const auto& block : report_blocks) {
-                                // 计算丢包率 (fraction_lost是0-255的值，表示百分比/256)
-                                float loss_rate = static_cast<float>(block.fraction_lost) / 255.0f;
-                                
-                                // 更新丢包反馈
-                                PacketFeedback feedback;
-                                feedback.sequence_number = block.highest_seq & 0xFFFF;
-                                feedback.received = (block.packets_lost == 0);
-                                feedback.arrival_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now().time_since_epoch()).count();
-                                feedback.send_time_ms = feedback.arrival_time_ms - 100;  // 估算
-                                bandwidth_estimator->OnPacketFeedback(feedback);
-                                
-                                // 从DLSR计算RTT (如果LSR可用)
-                                if (block.lsr != 0 && block.dlsr != 0) {
-                                    // RTT = receive time - LSR - DLSR
-                                    uint64_t now_ntp = (uint64_t)time(nullptr) << 32;
-                                    uint32_t dlsr_ms = (block.dlsr >> 16) & 0xFFFF;
-                                    int64_t rtt_ms = static_cast<int64_t>((now_ntp >> 16) - block.lsr - dlsr_ms);
-                                    if (rtt_ms > 0) {
-                                        bandwidth_estimator->OnRttUpdate(rtt_ms);
-                                        std::cout << "[BWE] RTT update: " << rtt_ms << " ms, loss rate: " << (loss_rate * 100) << "%" << std::endl;
-                                    }
+                    // 验证长度
+                    if (length == 0 || offset + 4 + length * 4 > size) {
+                        break;
+                    }
+                    
+                    // 处理RR包 (PT = 201)
+                    if (pt == 201) {
+                        uint8_t rc = first_byte & 0x1F;  // 报告块计数
+                        
+                        // 从报告块提取丢包率和RTT信息
+                        if (rc > 0 && offset + 28 <= size) {
+                            // 第一个报告块从offset + 8开始 (4字节头部 + 4字节SSRC)
+                            size_t block_offset = offset + 8;
+                            
+                            uint8_t fraction_lost = data[block_offset + 4];
+                            int32_t packets_lost = (data[block_offset + 5] << 16) | 
+                                                   (data[block_offset + 6] << 8) | 
+                                                   data[block_offset + 7];
+                            
+                            // 计算丢包率
+                            float loss_rate = static_cast<float>(fraction_lost) / 255.0f;
+                            
+                            // 更新丢包反馈
+                            PacketFeedback feedback;
+                            feedback.sequence_number = 0;
+                            feedback.received = (fraction_lost < 128);  // 简单判断
+                            feedback.arrival_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch()).count();
+                            feedback.send_time_ms = feedback.arrival_time_ms - 100;
+                            feedback.payload_size = 1200;  // 估算
+                            bandwidth_estimator->OnPacketFeedback(feedback);
+                            
+                            // 提取RTT信息 (LSR和DLSR)
+                            uint32_t lsr = (data[block_offset + 16] << 24) | 
+                                          (data[block_offset + 17] << 16) | 
+                                          (data[block_offset + 18] << 8) | 
+                                          data[block_offset + 19];
+                            uint32_t dlsr = (data[block_offset + 20] << 24) | 
+                                           (data[block_offset + 21] << 16) | 
+                                           (data[block_offset + 22] << 8) | 
+                                           data[block_offset + 23];
+                            
+                            if (lsr != 0 && dlsr != 0) {
+                                // 计算RTT: 简化的本地估算
+                                int64_t rtt_ms = static_cast<int64_t>(dlsr / 65536);  // DLSR单位是1/65536秒
+                                if (rtt_ms > 0 && rtt_ms < 5000) {
+                                    bandwidth_estimator->OnRttUpdate(rtt_ms);
+                                    std::cout << "[BWE] RTT update: " << rtt_ms << " ms, loss rate: " << (loss_rate * 100) << "%" << std::endl;
                                 }
                             }
                         }
                     }
                     
-                    // 处理Sender Report (SR) - 可提取往返时间
-                    if (packet->GetType() == RtcpPacketType::kSR) {
-                        // 可以从SR中提取NTP时间戳来计算RTT
-                    }
+                    // 移动到下一个RTCP包
+                    offset += 4 + length * 4;
                 }
             }
             
@@ -1457,7 +1472,7 @@ int main(int argc, char* argv[]) {
     
     // 使用atomic flag来更精确地控制stats线程退出
     std::atomic<bool> stats_thread_running{true};
-    std::thread stats_thread([&pc, &stats_thread_running]() {
+    std::thread stats_thread([&pc, &stats_thread_running, &bwe_estimator]() {
         while (stats_thread_running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (!stats_thread_running.load()) break;
