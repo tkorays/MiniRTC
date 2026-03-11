@@ -50,18 +50,23 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# ===== FetchContent: Opus =====
-include(FetchContent)
-FetchContent_Declare(
-    opus
-    GIT_REPOSITORY https://github.com/xiph/opus.git
-    GIT_TAG v1.5.2
-    GIT_SHALLOW TRUE
-)
+# ===== Find Opus (use brew if available) =====
+# Skip FetchContent if we have system opus
+find_path(OPUS_INCLUDE_DIR opus.h /usr/local/include /opt/homebrew/include /usr/include)
+find_library(OPUS_LIBRARY NAMES opus PATHS /usr/local/lib /opt/homebrew/lib /usr/lib)
 
-# Try to find system opus first, then use FetchContent
-find_package(opus CONFIG QUIET)
-if(NOT opus_FOUND)
+if(OPUS_INCLUDE_DIR AND OPUS_LIBRARY)
+    message(STATUS "Found Opus: ${OPUS_LIBRARY}")
+    set(OPUS_FOUND TRUE)
+else()
+    # Fall back to FetchContent
+    include(FetchContent)
+    FetchContent_Declare(
+        opus
+        GIT_REPOSITORY https://github.com/xiph/opus.git
+        GIT_TAG v1.5.2
+        GIT_SHALLOW TRUE
+    )
     message(STATUS "Fetching Opus...")
     FetchContent_MakeAvailable(opus)
 endif()
