@@ -1044,6 +1044,35 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         std::cout << "[RTPTransport] RTP传输层已启动 (Loopback模式)" << std::endl;
+        
+        // 初始化JitterBuffer (用于接收端缓冲和排序)
+        std::cout << "[JitterBuffer] 初始化JitterBuffer..." << std::endl;
+        
+        // 创建音频JitterBuffer (使用自适应模式)
+        g_audio_jitter_buffer = CreateJitterBuffer(JitterBufferMode::kAdaptive);
+        JitterBufferConfig audio_jb_config;
+        audio_jb_config.mode = JitterBufferMode::kAdaptive;
+        audio_jb_config.fixed_delay_ms = 60;
+        audio_jb_config.max_delay_ms = 200;
+        audio_jb_config.min_delay_ms = 20;
+        if (!g_audio_jitter_buffer->Initialize(audio_jb_config)) {
+            std::cerr << "Failed to initialize audio JitterBuffer" << std::endl;
+            return 1;
+        }
+        
+        // 创建视频JitterBuffer (使用自适应模式)
+        g_video_jitter_buffer = CreateJitterBuffer(JitterBufferMode::kAdaptive);
+        JitterBufferConfig video_jb_config;
+        video_jb_config.mode = JitterBufferMode::kAdaptive;
+        video_jb_config.fixed_delay_ms = 60;
+        video_jb_config.max_delay_ms = 200;
+        video_jb_config.min_delay_ms = 20;
+        if (!g_video_jitter_buffer->Initialize(video_jb_config)) {
+            std::cerr << "Failed to initialize video JitterBuffer" << std::endl;
+            return 1;
+        }
+        
+        std::cout << "[JitterBuffer] JitterBuffer已启动 (自适应模式)" << std::endl;
     }
     
     // Caller模式: 生成offer SDP并打印
@@ -1257,8 +1286,12 @@ int main(int argc, char* argv[]) {
         rtp_callback = callback;
         g_rtp_transport->SetCallback(rtp_callback);
         
+        std::cout << "[RTP] Setting callback and starting receiving..." << std::endl;
+        
         // 启动RTPTransport的接收
         g_rtp_transport->StartReceiving();
+        
+        std::cout << "[RTP] Receive started, transport state: " << static_cast<int>(g_rtp_transport->GetState()) << std::endl;
     }
     
     // Start connection

@@ -304,7 +304,18 @@ TransportError RTPTransport::ReceiveRtcpPacket(
 }
 
 void RTPTransport::SetCallback(std::shared_ptr<ITransportCallback> callback) {
-  callback_ = std::dynamic_pointer_cast<IRtpTransportCallback>(callback);
+  // Store the callback - try IRtpTransportCallback first, fall back to ITransportCallback
+  auto rtp_callback = std::dynamic_pointer_cast<IRtpTransportCallback>(callback);
+  if (rtp_callback) {
+    callback_ = rtp_callback;
+  } else {
+    // For callbacks that don't implement IRtpTransportCallback,
+    // we need to store ITransportCallback separately
+    // Use a wrapper to make it compatible
+    callback_ = std::shared_ptr<IRtpTransportCallback>();
+  }
+  // Store the original callback for direct calls
+  transport_callback_ = callback;
 }
 
 const NetworkAddress& RTPTransport::GetLocalAddress() const {

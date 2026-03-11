@@ -79,6 +79,11 @@ bool E2ETest::Initialize(const E2EConfig& config) {
         return false;
     }
     
+    // Initialize RTCP modules if enabled
+    if (config_.enable_rtcp) {
+        InitializeRtcp();
+    }
+    
     return true;
 }
 
@@ -120,12 +125,30 @@ bool E2ETest::Start() {
     auto local_addr_b = transport_b_->GetLocalAddress();
     config_.remote_port_b = local_addr_b.port;
     
+    // Start RTCP modules if enabled
+    if (config_.enable_rtcp) {
+        if (rtcp_module_a_) {
+            rtcp_module_a_->Start();
+        }
+        if (rtcp_module_b_) {
+            rtcp_module_b_->Start();
+        }
+    }
+    
     running_ = true;
     return true;
 }
 
 void E2ETest::Stop() {
     running_ = false;
+    
+    // Stop RTCP modules
+    if (rtcp_module_a_) {
+        rtcp_module_a_->Stop();
+    }
+    if (rtcp_module_b_) {
+        rtcp_module_b_->Stop();
+    }
     
     if (transport_a_) {
         transport_a_->Close();
