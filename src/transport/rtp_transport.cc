@@ -453,6 +453,12 @@ void RTPTransport::ReceiveLoop() {
         callback->OnTransportError(error, "Receive error");
       }
     }
+    
+    // Debug: print receive status
+    if (error == TransportError::kOk && packet) {
+      fprintf(stderr, "[RTPTransport] ReceiveLoop: got packet seq=%u, callback=%p\n", 
+              packet->GetSequenceNumber(), (void*)callback.get());
+    }
   }
 }
 
