@@ -207,11 +207,13 @@ TransportError RTPTransport::ReceiveRtpPacket(
     
     // Wait for packet with timeout
     // Also check loopback_mode_ to allow immediate wakeup on close
+    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: waiting for packet, queue_size=%zu\n", loopback_queue_.size());
     if (timeout_ms > 0) {
       auto wait_result = loopback_cv_.wait_for(
           lock, std::chrono::milliseconds(timeout_ms),
           [this] { return !loopback_queue_.empty() || !loopback_mode_.load(); });
       
+      fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: wait completed, queue_size=%zu\n", loopback_queue_.size());
       if (!wait_result) {
         return TransportError::kTimeout;
       }
