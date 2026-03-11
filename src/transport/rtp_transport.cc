@@ -462,7 +462,11 @@ void RTPTransport::ProcessReceivedData(const uint8_t* data,
   // Check if RTCP or RTP based on packet type
   if (size < 2) return;
 
+  // Try IRtpTransportCallback first, fall back to ITransportCallback
   auto callback = callback_.lock();
+  if (!callback) {
+    callback = std::dynamic_pointer_cast<IRtpTransportCallback>(transport_callback_.lock());
+  }
   if (!callback) return;
 
   // RTP/RTCP can be distinguished by payload type

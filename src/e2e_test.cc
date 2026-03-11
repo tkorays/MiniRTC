@@ -174,6 +174,8 @@ void E2ETest::RunSender(RTPTransport* transport, int duration_sec) {
     
     uint32_t timestamp = 0;
     uint16_t seq = 0;
+    uint32_t packet_count = 0;
+    uint32_t octet_count = 0;
     
     auto start_time = std::chrono::steady_clock::now();
     auto end_time = start_time + std::chrono::seconds(duration_sec);
@@ -182,6 +184,14 @@ void E2ETest::RunSender(RTPTransport* transport, int duration_sec) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(0, 255);
+    
+    // Get the corresponding RTCP module
+    RTCPModule* rtcp_module = nullptr;
+    if (config.ssrc == kSsrcA && rtcp_module_a_) {
+        rtcp_module = rtcp_module_a_.get();
+    } else if (config.ssrc == kSsrcB && rtcp_module_b_) {
+        rtcp_module = rtcp_module_b_.get();
+    }
     
     while (running_ && std::chrono::steady_clock::now() < end_time) {
         // Create RTP packet
@@ -199,6 +209,15 @@ void E2ETest::RunSender(RTPTransport* transport, int duration_sec) {
         
         // Send
         transport->SendRtpPacket(packet);
+        
+        // Update RTCP sender stats
+        packet_count++;
+        octet_count += packet->GetSize();
+        
+        // Update RTCP module every packet
+        if (rtcp_module) {
+            rtcp_module->UpdateSenderStats(packet_count, octet_count, timestamp);
+        }
         
         // Update
         timestamp += timestamp_increment;

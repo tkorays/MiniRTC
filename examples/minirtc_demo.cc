@@ -1252,25 +1252,28 @@ int main(int argc, char* argv[]) {
     
     // 设置RTP Transport回调 (Loopback模式使用内部接收)
     std::shared_ptr<ITransportCallback> rtp_callback;
-    if (mode == "loopback" && g_rtp_transport) {
+    std::atomic<bool> jitter_thread_running{false};
+    if (mode == "loopback" && g_rtp_transport && g_audio_jitter_buffer && g_video_jitter_buffer) {
         // 创建回调类来处理接收的RTP包
         class RtpRecvCallback : public ITransportCallback {
         public:
             std::shared_ptr<ITrack> audio_track;
             std::shared_ptr<ITrack> video_track;
+            std::shared_ptr<IJitterBuffer> audio_jitter_buffer;
+            std::shared_ptr<IJitterBuffer> video_jitter_buffer;
             int recv_count = 0;
             
             void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet, const NetworkAddress& from) override {
                 if (!packet) return;
                 recv_count++;
                 uint32_t ssrc = packet->GetSsrc();
-                std::cout << "[RTP Callback] Received packet SSRC=" << ssrc << " seq=" << packet->GetSequenceNumber() << " count=" << recv_count << std::endl;
-                if (audio_track && ssrc == 1001) {
-                    audio_track->OnRtpPacketReceived(packet);
-                } else if (video_track && ssrc == 1002) {
-                    video_track->OnRtpPacketReceived(packet);
+                // 将包添加到对应的JitterBuffer进行缓冲和排序
+                if (ssrc == 1001 && audio_jitter_buffer) {
+                    audio_jitter_buffer->AddPacket(packet);
+                } else if (ssrc == 1002 && video_jitter_buffer) {
+                    video_jitter_buffer->AddPacket(packet);
                 } else {
-                    std::cout << "[RTP Callback] Unknown SSRC: " << ssrc << std::endl;
+                    std::cout << "[RTP Callback] Unknown SSRC: " << ssrc << " seq=" << packet->GetSequenceNumber() << std::endl;
                 }
             }
             void OnRtcpPacketReceived(const uint8_t* data, size_t size, const NetworkAddress& from) override {}
@@ -1283,6 +1286,8 @@ int main(int argc, char* argv[]) {
         auto callback = std::make_shared<RtpRecvCallback>();
         callback->audio_track = audio_track_ptr;
         callback->video_track = video_track_ptr;
+        callback->audio_jitter_buffer = g_audio_jitter_buffer;
+        callback->video_jitter_buffer = g_video_jitter_buffer;
         rtp_callback = callback;
         
         std::cout << "[RTP] Callback created, trying to cast..." << std::endl;
@@ -1301,6 +1306,36 @@ int main(int argc, char* argv[]) {
         g_rtp_transport->StartReceiving();
         
         std::cout << "[RTP] Receive started, transport state: " << static_cast<int>(g_rtp_transport->GetState()) << std::endl;
+        
+        // 启动JitterBuffer消费线程 (从JitterBuffer获取排序后的包)
+        std::cout << "[JitterBuffer] 启动消费线程..." << std::endl;
+        jitter_thread_running.store(true);
+        
+        // 音频JitterBuffer消费线程
+        std::thread audio_jitter_thread([&audio_track_ptr, &g_audio_jitter_buffer, &jitter_thread_running]() {
+            while (jitter_thread_running.load()) {
+                auto packet = g_audio_jitter_buffer->GetPacket(10);  // 10ms超时
+                if (packet && audio_track_ptr) {
+                    audio_track_ptr->OnRtpPacketReceived(packet);
+                }
+            }
+        });
+        
+        // 视频JitterBuffer消费线程
+        std::thread video_jitter_thread([&video_track_ptr, &g_video_jitter_buffer, &jitter_thread_running]() {
+            while (jitter_thread_running.load()) {
+                auto packet = g_video_jitter_buffer->GetPacket(10);  // 10ms超时
+                if (packet && video_track_ptr) {
+                    video_track_ptr->OnRtpPacketReceived(packet);
+                }
+            }
+        });
+        
+        // 将线程 detach，让它们在后台运行
+        audio_jitter_thread.detach();
+        video_jitter_thread.detach();
+        
+        std::cout << "[JitterBuffer] 消费线程已启动" << std::endl;
     }
     
     // Start connection
