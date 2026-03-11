@@ -433,6 +433,9 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
+    // Create handler first and keep it alive (shared_ptr ensures lifecycle)
+    auto handler = std::make_shared<DemoHandler>();
+    
     // Create PeerConnection
     std::cout << "[1/5] 创建PeerConnection..." << std::endl;
     auto pc = CreatePeerConnection();
@@ -454,8 +457,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // Set handler
-    auto handler = std::make_shared<DemoHandler>();
+    // Set handler (handler is kept alive by shared_ptr in this scope)
     pc->SetHandler(handler);
     
     // Create and add tracks
