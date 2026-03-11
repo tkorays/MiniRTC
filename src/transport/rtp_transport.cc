@@ -92,6 +92,12 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
 void RTPTransport::Close() {
   StopReceiving();
 
+  // Wake up any threads waiting on loopback queue
+  // Set state to closed first so ReceiveRtpPacket returns immediately
+  state_.store(TransportState::kClosed);
+  loopback_mode_.store(false);
+  loopback_cv_.notify_all();
+  
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (rtcp_socket_) {
@@ -106,9 +112,6 @@ void RTPTransport::Close() {
 
   // Clear loopback queue
   loopback_queue_.clear();
-  loopback_mode_.store(false);
-  
-  state_ = TransportState::kClosed;
 }
 
 TransportState RTPTransport::GetState() const {
@@ -195,13 +198,17 @@ TransportError RTPTransport::ReceiveRtpPacket(
     std::unique_lock<std::mutex> lock(loopback_mutex_);
     
     // Wait for packet with timeout
+    // Also check loopback_mode_ to allow immediate wakeup on close
     if (timeout_ms > 0) {
       auto wait_result = loopback_cv_.wait_for(
           lock, std::chrono::milliseconds(timeout_ms),
-          [this] { return !loopback_queue_.empty(); });
+          [this] { return !loopback_queue_.empty() || !loopback_mode_.load(); });
       
       if (!wait_result) {
         return TransportError::kTimeout;
+      }
+      if (!loopback_mode_.load()) {
+        return TransportError::kNotInitialized;
       }
     } else {
       // Non-blocking mode

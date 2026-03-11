@@ -163,20 +163,22 @@ public:
 
     void Stop() {
         if (!running_) return;
-        running_ = false;
-
-        if (recv_thread_.joinable()) {
-            recv_thread_.join();
-        }
-
+        
+        // Close sockets first to wake up blocking recvfrom
         if (send_fd_ >= 0) {
             close(send_fd_);
             send_fd_ = -1;
         }
-
+        
         if (recv_fd_ >= 0) {
             close(recv_fd_);
             recv_fd_ = -1;
+        }
+        
+        running_ = false;
+
+        if (recv_thread_.joinable()) {
+            recv_thread_.join();
         }
     }
 
@@ -1198,8 +1200,9 @@ int main(int argc, char* argv[]) {
         pc->AddTrack(video_track_ptr);
     }
     
-    // 设置UDP接收回调 (所有模式都需要)
-    if (g_udp_loopback) {
+    // 设置UDP接收回调 (非Loopback模式)
+    // 注意：Loopback模式下，接收通过RtpTransport处理，不使用UDP回调
+    if (g_udp_loopback && mode != "loopback") {
         g_udp_loopback->SetRecvCallback([&audio_track_ptr, &video_track_ptr](std::shared_ptr<RtpPacket> packet) {
             if (!packet) return;
             
@@ -1232,6 +1235,9 @@ int main(int argc, char* argv[]) {
                     } else if (video_track_ptr && ssrc == 1002) {
                         video_track_ptr->OnRtpPacketReceived(packet);
                     }
+                } else if (error == TransportError::kNotInitialized) {
+                    // Transport closed, exit loop
+                    break;
                 }
             }
         });
