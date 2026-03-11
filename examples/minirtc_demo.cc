@@ -1314,14 +1314,20 @@ int main(int argc, char* argv[]) {
                 if (!data || size == 0 || !bandwidth_estimator) return;
                 
                 // 解析RTCP包 - TODO: 暂时跳过
+                std::vector<std::shared_ptr<RtcpPacket>> packets;
                 // RtcpParser parser;
-                // std::vector<std::shared_ptr<RtcpPacket>> packets;
                 // if (!parser.Parse(data, size, packets)) {
                 //     return;
                 // }
                 // 
                 // // 处理每个RTCP包
                 // for (const auto& packet : packets) {
+                if (!packets.empty()) {
+                    // 暂时不处理RTCP包
+                }
+                
+                // 处理每个RTCP包
+                for (const auto& packet : packets) {
                     if (!packet) continue;
                     
                     // 处理Receiver Report (RR)
