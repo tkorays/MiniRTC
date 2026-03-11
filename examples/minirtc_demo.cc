@@ -1453,7 +1453,7 @@ int main(int argc, char* argv[]) {
     
     // 使用atomic flag来更精确地控制stats线程退出
     std::atomic<bool> stats_thread_running{true};
-    std::thread stats_thread([&pc, &stats_thread_running]() {
+    std::thread stats_thread([&pc, &stats_thread_running, &g_bandwidth_estimator]() {
         while (stats_thread_running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (!stats_thread_running.load()) break;
@@ -1471,6 +1471,16 @@ int main(int argc, char* argv[]) {
                     std::cout << "State: " << static_cast<int>(state);
                     break;
             }
+            
+            // 打印带宽估计结果
+            if (g_bandwidth_estimator) {
+                auto bwe_result = g_bandwidth_estimator->GetResult();
+                std::cout << " | [BWE] 估计码率: " << bwe_result.bitrate_bps / 1000 << " kbps"
+                          << " | 目标码率: " << bwe_result.target_bitrate_bps / 1000 << " kbps"
+                          << " | 丢包率: " << (bwe_result.loss_rate * 100) << "%"
+                          << " | RTT: " << bwe_result.rtt_ms << " ms";
+            }
+            
             std::cout << std::endl;
         }
     });
