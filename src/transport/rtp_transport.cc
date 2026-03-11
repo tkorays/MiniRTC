@@ -49,9 +49,6 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
     config_.loopback_mode = is_loopback;
   }
 
-  // Check if loopback mode is requested
-  bool is_loopback = config_.loopback_mode;
-
 #ifdef _WIN32
   WSADATA wsa_data;
   WSAStartup(MAKEWORD(2, 2), &wsa_data);

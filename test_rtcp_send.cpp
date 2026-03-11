@@ -17,26 +17,42 @@ using namespace minirtc;
 int main() {
     std::cout << "=== RTCP SR Send Test ===" << std::endl;
     
-    // Create RTP transport
-    auto transport = CreateRTPTransport();
+    // Create two RTP transports for bidirectional communication
+    auto transport_a = CreateRTPTransport();
+    auto transport_b = CreateRTPTransport();
     
-    // Configure transport
-    RtpTransportConfig config;
-    config.type = TransportType::kUdp;
-    config.local_addr = NetworkAddress("127.0.0.1", 10000);
-    config.remote_addr = NetworkAddress("127.0.0.1", 10001);
-    config.ssrc = 0x12345678;
-    config.enable_rtcp = true;
-    config.rtcp_port = 10001;  // RTCP port
-    config.loopback_mode = true;  // Use loopback mode
+    // Configure transport A
+    RtpTransportConfig config_a;
+    config_a.type = TransportType::kUdp;
+    config_a.local_addr = NetworkAddress("127.0.0.1", 11000);
+    config_a.remote_addr = NetworkAddress("127.0.0.1", 11002);
+    config_a.ssrc = 0x12345678;
+    config_a.enable_rtcp = true;
+    config_a.rtcp_port = 11001;  // RTCP port
     
-    auto error = transport->Open(config);
+    auto error = transport_a->Open(config_a);
     if (error != TransportError::kOk) {
-        std::cerr << "Failed to open transport: " << static_cast<int>(error) << std::endl;
+        std::cerr << "Failed to open transport A: " << static_cast<int>(error) << std::endl;
         return 1;
     }
     
-    std::cout << "Transport opened successfully" << std::endl;
+    // Configure transport B
+    RtpTransportConfig config_b;
+    config_b.type = TransportType::kUdp;
+    config_b.local_addr = NetworkAddress("127.0.0.1", 11002);
+    config_b.remote_addr = NetworkAddress("127.0.0.1", 11000);
+    config_b.ssrc = 0x87654321;
+    config_b.enable_rtcp = true;
+    config_b.rtcp_port = 11003;  // RTCP port
+    
+    error = transport_b->Open(config_b);
+    if (error != TransportError::kOk) {
+        std::cerr << "Failed to open transport B: " << static_cast<int>(error) << std::endl;
+        transport_a->Close();
+        return 1;
+    }
+    
+    std::cout << "Transports opened successfully" << std::endl;
     
     // Create RTCP module
     auto rtcp_module = CreateRTCPModule();
@@ -53,7 +69,7 @@ int main() {
     
     // Initialize RTCP module
     rtcp_module->Initialize(0x12345678, 0x87654321, rtcp_config);
-    rtcp_module->BindTransport(transport.get());
+    rtcp_module->BindTransport(transport_a.get());
     
     std::cout << "RTCP module initialized" << std::endl;
     
@@ -65,12 +81,12 @@ int main() {
     // Update sender stats (simulate sending RTP packets)
     for (int i = 0; i < 10; ++i) {
         rtcp_module->UpdateSenderStats(i + 1, (i + 1) * 160, i * 960);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
-    // Wait for RTCP timer to trigger (default is 5 seconds)
+    // Wait for RTCP timer to trigger
     std::cout << "Waiting for RTCP timer..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::milliseconds(6000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     
     // Manual trigger to ensure SR is sent
     std::cout << "Manual SendSr() call..." << std::endl;
@@ -86,7 +102,8 @@ int main() {
     
     // Stop RTCP module
     rtcp_module->Stop();
-    transport->Close();
+    transport_a->Close();
+    transport_b->Close();
     
     if (stats.sr_sent > 0) {
         std::cout << "\n✓ SUCCESS: RTCP SR packets were sent!" << std::endl;
