@@ -32,9 +32,24 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
     return TransportError::kAlreadyExists;
   }
 
-  // Store config - copy all fields from input config
-  config_ = config;
-  config_.type = config.type;  // Ensure base class type is set
+  // Store config - copy all relevant fields from input config
+  config_ = RtpTransportConfig();
+  config_.type = config.type;
+  config_.local_addr = config.local_addr;
+  config_.remote_addr = config.remote_addr;
+  config_.socket_buffer_size = config.socket_buffer_size;
+  config_.enable_ipv6 = config.enable_ipv6;
+  config_.timeout_ms = config.timeout_ms;
+  // Copy RtpTransportConfig specific fields
+  config_.ssrc = config.ssrc;
+  config_.rtcp_port = config.rtcp_port;
+  config_.enable_rtcp = config.enable_rtcp;
+  config_.enable_nack = config.enable_nack;
+  config_.enable_fec = config.enable_fec;
+  config_.max_packet_size = config.max_packet_size;
+  config_.enable_rtx = config.enable_rtx;
+  config_.rtx_payload_type = config.rtx_payload_type;
+  config_.loopback_mode = config.loopback_mode;
 
   // Check if loopback mode is requested
   bool is_loopback = config_.loopback_mode;
