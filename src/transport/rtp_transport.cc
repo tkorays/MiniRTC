@@ -9,6 +9,8 @@
 #include <cstring>
 #include <random>
 
+#include "minirtc/transport/rtcp_module.h"
+
 namespace minirtc {
 
 // ============================================================================

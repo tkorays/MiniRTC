@@ -16,6 +16,7 @@
 
 #include "minirtc/transport/transport.h"
 #include "minirtc/transport/transport_types.h"
+#include "minirtc/nack_module.h"
 
 namespace minirtc {
 
@@ -181,6 +182,12 @@ class RTPTransport : public IRTPTransport {
   // NACK state
   std::mutex nack_mutex_;
   std::vector<uint16_t> pending_nacks_;
+  
+  // NACK module for packet loss detection and retransmission
+  std::unique_ptr<INackModule> nack_module_;
+  
+  // Enable NACK
+  bool enable_nack_ = false;
 
   // Loopback mode support
   std::atomic<bool> loopback_mode_{false};
