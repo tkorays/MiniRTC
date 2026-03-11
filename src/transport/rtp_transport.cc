@@ -32,33 +32,19 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
     return TransportError::kAlreadyExists;
   }
 
-  // Try to cast to RtpTransportConfig to get extended fields
-  const RtpTransportConfig* rtp_config = dynamic_cast<const RtpTransportConfig*>(&config);
-  
-  // Store config - copy all relevant fields
-  config_ = RtpTransportConfig();
+  // Store config - copy base class fields
+  // Note: RtpTransportConfig extended fields should be set via SetConfig() before Open()
   config_.type = config.type;
   config_.local_addr = config.local_addr;
   config_.remote_addr = config.remote_addr;
   config_.socket_buffer_size = config.socket_buffer_size;
   config_.enable_ipv6 = config.enable_ipv6;
   config_.timeout_ms = config.timeout_ms;
-  
-  // Copy RtpTransportConfig specific fields if available
-  if (rtp_config) {
-    config_.ssrc = rtp_config->ssrc;
-    config_.rtcp_port = rtp_config->rtcp_port;
-    config_.enable_rtcp = rtp_config->enable_rtcp;
-    config_.enable_nack = rtp_config->enable_nack;
-    config_.enable_fec = rtp_config->enable_fec;
-    config_.max_packet_size = rtp_config->max_packet_size;
-    config_.enable_rtx = rtp_config->enable_rtx;
-    config_.rtx_payload_type = rtp_config->rtx_payload_type;
-    config_.loopback_mode = rtp_config->loopback_mode;
-  }
+  config_.loopback_mode = config.loopback_mode;  // Copy loopback_mode from input config
 
   // Check if loopback mode is requested
   bool is_loopback = config_.loopback_mode;
+  fprintf(stderr, "[RTPTransport] Open: loopback_mode=%d\n", is_loopback);
 
 #ifdef _WIN32
   WSADATA wsa_data;
@@ -216,7 +202,7 @@ TransportError RTPTransport::ReceiveRtpPacket(
 
   // Loopback mode: receive from local queue
   if (loopback_mode_.load()) {
-    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: loopback mode, timeout=%d\n", timeout_ms);
+    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: loopback mode, timeout=%d, queue_size=%zu\n", timeout_ms, loopback_queue_.size());
     std::unique_lock<std::mutex> lock(loopback_mutex_);
     
     // Wait for packet with timeout

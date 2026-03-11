@@ -21,7 +21,7 @@ int main() {
     auto transport_a = CreateRTPTransport();
     auto transport_b = CreateRTPTransport();
     
-    // Configure transport A
+    // Configure transport A - first set config, then open
     RtpTransportConfig config_a;
     config_a.type = TransportType::kUdp;
     config_a.local_addr = NetworkAddress("127.0.0.1", 11000);
@@ -30,13 +30,22 @@ int main() {
     config_a.enable_rtcp = true;
     config_a.rtcp_port = 11001;  // RTCP port
     
-    auto error = transport_a->Open(config_a);
+    // Set config first (this stores all RtpTransportConfig fields)
+    transport_a->SetConfig(config_a);
+    
+    // Now open with basic transport config
+    TransportConfig tconfig_a;
+    tconfig_a.type = TransportType::kUdp;
+    tconfig_a.local_addr = NetworkAddress("127.0.0.1", 11000);
+    tconfig_a.remote_addr = NetworkAddress("127.0.0.1", 11002);
+    
+    auto error = transport_a->Open(tconfig_a);
     if (error != TransportError::kOk) {
         std::cerr << "Failed to open transport A: " << static_cast<int>(error) << std::endl;
         return 1;
     }
     
-    // Configure transport B
+    // Configure transport B - first set config, then open
     RtpTransportConfig config_b;
     config_b.type = TransportType::kUdp;
     config_b.local_addr = NetworkAddress("127.0.0.1", 11002);
@@ -45,7 +54,16 @@ int main() {
     config_b.enable_rtcp = true;
     config_b.rtcp_port = 11003;  // RTCP port
     
-    error = transport_b->Open(config_b);
+    // Set config first
+    transport_b->SetConfig(config_b);
+    
+    // Now open
+    TransportConfig tconfig_b;
+    tconfig_b.type = TransportType::kUdp;
+    tconfig_b.local_addr = NetworkAddress("127.0.0.1", 11002);
+    tconfig_b.remote_addr = NetworkAddress("127.0.0.1", 11000);
+    
+    error = transport_b->Open(tconfig_b);
     if (error != TransportError::kOk) {
         std::cerr << "Failed to open transport B: " << static_cast<int>(error) << std::endl;
         transport_a->Close();

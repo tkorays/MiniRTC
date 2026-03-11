@@ -56,6 +56,7 @@ bool E2ETest::Initialize(const E2EConfig& config) {
     config_a.remote_addr = NetworkAddress(config_.remote_ip, config_.remote_port_a);
     config_a.ssrc = kSsrcA;
     config_a.enable_rtcp = config_.enable_rtcp;
+    config_a.rtcp_port = config_.enable_rtcp ? 1 : 0;  // Use port+1 for RTCP if enabled
     
     auto error = transport_a_->SetConfig(config_a);
     if (error != TransportError::kOk) {
@@ -72,6 +73,7 @@ bool E2ETest::Initialize(const E2EConfig& config) {
     config_b.remote_addr = NetworkAddress(config_.remote_ip, config_.remote_port_b);
     config_b.ssrc = kSsrcB;
     config_b.enable_rtcp = config_.enable_rtcp;
+    config_b.rtcp_port = config_.enable_rtcp ? 1 : 0;  // Use port+1 for RTCP if enabled
     
     error = transport_b_->SetConfig(config_b);
     if (error != TransportError::kOk) {
