@@ -1039,6 +1039,13 @@ int main(int argc, char* argv[]) {
         config.loopback_mode = true;  // 启用loopback模式
         config.ssrc = 0x12345678;     // 设置SSRC
         
+        // 启用NACK功能
+        config.enable_nack = true;
+        std::cout << "[NACK] 启用NACK丢包重传功能" << std::endl;
+        
+        // 先设置配置（包含NACK配置）
+        g_rtp_transport->SetConfig(config);
+        
         TransportError error = g_rtp_transport->Open(config);
         if (error != TransportError::kOk) {
             std::cerr << "Failed to open RTP transport: " << static_cast<int>(error) << std::endl;
