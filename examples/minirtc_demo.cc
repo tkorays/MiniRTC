@@ -511,7 +511,6 @@ public:
         }
         
         // 优先使用RTPTransport发送RTP包 (经过传输层)
-        fprintf(stderr, "[AudioTrack] SendRtpPacket: rtp_transport_=%p, running_=%d\n", (void*)rtp_transport_.get(), running_);
         if (rtp_transport_ && running_) {
             // 创建RTP包
             auto packet = std::make_shared<RtpPacket>(111, rtp_timestamp_, rtp_seq_);
