@@ -1046,10 +1046,7 @@ int main(int argc, char* argv[]) {
         
         // Enable loopback mode after opening
         g_rtp_transport->SetLoopbackMode(true);
-        if (error != TransportError::kOk) {
-            std::cerr << "Failed to open RTP transport: " << static_cast<int>(error) << std::endl;
-            return 1;
-        }
+        
         std::cout << "[RTPTransport] RTP传输层已启动 (Loopback模式)" << std::endl;
         
         // 初始化JitterBuffer (用于接收端缓冲和排序)
