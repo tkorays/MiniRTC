@@ -106,6 +106,12 @@ if(BUILD_TESTS)
     add_subdirectory(test)
 endif()
 
+# Build examples
+if(BUILD_EXAMPLES)
+    message(STATUS "Building examples...")
+    add_subdirectory(examples)
+endif()
+
 # Print configuration
 message(STATUS "MiniRTC Version: ${PROJECT_VERSION}")
 message(STATUS "Build tests: ${BUILD_TESTS}")
