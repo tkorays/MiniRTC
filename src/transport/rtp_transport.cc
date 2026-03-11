@@ -236,9 +236,15 @@ TransportError RTPTransport::ReceiveRtpPacket(
     
     lock.unlock();
     
+    // Debug: print first few bytes
+    fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: data size=%zu, first bytes: %02x %02x %02x %02x\n",
+            data.size(), data[0], data[1], data[2], data[3]);
+    
     // Parse RTP packet
     *packet = std::make_shared<RtpPacket>();
-    if ((*packet)->Deserialize(data.data(), data.size()) != 0) {
+    int deser_result = (*packet)->Deserialize(data.data(), data.size());
+    if (deser_result != 0) {
+      fprintf(stderr, "[RTPTransport] ReceiveRtpPacket: Deserialize failed with code %d\n", deser_result);
       return TransportError::kInvalidParam;
     }
 
