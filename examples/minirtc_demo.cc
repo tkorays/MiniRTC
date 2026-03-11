@@ -289,6 +289,9 @@ std::shared_ptr<IRTPTransport> g_rtp_transport;
 std::shared_ptr<IJitterBuffer> g_audio_jitter_buffer;
 std::shared_ptr<IJitterBuffer> g_video_jitter_buffer;
 
+// 全局带宽估计器 (用于拥塞控制)
+std::shared_ptr<IBandwidthEstimator> g_bandwidth_estimator;
+
 // ============================================================================
 // Stats printing utility
 // ============================================================================
