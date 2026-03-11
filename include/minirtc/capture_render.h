@@ -36,7 +36,7 @@ public:
     virtual ErrorCode GetParam(VideoCaptureParam* param) const = 0;
 
     virtual ErrorCode Initialize() = 0;
-    virtual ErrorCode StartCapture(VideoCaptureObserver* observer) = 0;
+    virtual ErrorCode StartCapture(std::weak_ptr<VideoCaptureObserver> observer) = 0;
     virtual ErrorCode StopCapture() = 0;
     virtual ErrorCode Release() = 0;
 

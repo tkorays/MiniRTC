@@ -217,8 +217,8 @@ TransportError RTPTransport::ReceiveRtcpPacket(
   return rtcp_socket_->ReceiveFrom(buffer, buffer_size, received, from);
 }
 
-void RTPTransport::SetCallback(ITransportCallback* callback) {
-  callback_ = static_cast<IRtpTransportCallback*>(callback);
+void RTPTransport::SetCallback(std::shared_ptr<ITransportCallback> callback) {
+  callback_ = std::dynamic_pointer_cast<IRtpTransportCallback>(callback);
 }
 
 const NetworkAddress& RTPTransport::GetLocalAddress() const {
@@ -329,12 +329,13 @@ void RTPTransport::ReceiveLoop() {
     // Use non-blocking receive with timeout
     TransportError error = ReceiveRtpPacket(&packet, &from, 100);
 
-    if (error == TransportError::kOk && packet && callback_) {
+    auto callback = callback_.lock();
+    if (error == TransportError::kOk && packet && callback) {
       // Dispatch to callback
-      callback_->OnRtpPacketReceived(packet, from);
+      callback->OnRtpPacketReceived(packet, from);
     } else if (error != TransportError::kTimeout) {
-      if (callback_) {
-        callback_->OnTransportError(error, "Receive error");
+      if (callback) {
+        callback->OnTransportError(error, "Receive error");
       }
     }
   }
@@ -346,21 +347,20 @@ void RTPTransport::ProcessReceivedData(const uint8_t* data,
   // Check if RTCP or RTP based on packet type
   if (size < 2) return;
 
+  auto callback = callback_.lock();
+  if (!callback) return;
+
   // RTP/RTCP can be distinguished by payload type
   uint8_t pt = data[1] & 0x7F;
 
   if (pt >= 64 && pt <= 95) {
     // RTCP - could be handled separately
-    if (callback_) {
-      callback_->OnRtcpPacketReceived(data, size, from);
-    }
+    callback->OnRtcpPacketReceived(data, size, from);
   } else {
     // RTP packet
     auto packet = std::make_shared<RtpPacket>();
     if (packet->Deserialize(data, size) == 0) {
-      if (callback_) {
-        callback_->OnRtpPacketReceived(packet, from);
-      }
+      callback->OnRtpPacketReceived(packet, from);
     }
   }
 }

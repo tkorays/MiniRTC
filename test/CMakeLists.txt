@@ -20,6 +20,7 @@ set(INTEGRATION_SOURCES
 
 # Fetch GoogleTest if not already available
 include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED TRUE)
 FetchContent_Declare(
   googletest
   GIT_REPOSITORY https://github.com/google/googletest.git
@@ -45,20 +46,6 @@ target_include_directories(minirtc_unit_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/common
 )
 add_test(NAME minirtc_unit_test COMMAND minirtc_unit_test)
-
-# Build integration tests
-add_executable(minirtc_integration_test ${INTEGRATION_SOURCES} ${COMMON_SOURCES})
-target_link_libraries(minirtc_integration_test 
-    minirtc 
-    gtest
-    gtest_main
-    pthread
-)
-target_include_directories(minirtc_integration_test PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/common
-)
-add_test(NAME minirtc_integration_test COMMAND minirtc_integration_test)
 
 # Build local loop tests
 add_executable(minirtc_local_loop_test 
@@ -132,3 +119,85 @@ target_include_directories(minirtc_fec_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/common
 )
 add_test(NAME minirtc_fec_test COMMAND minirtc_fec_test)
+
+# Build E2E tests
+add_executable(minirtc_e2e_test 
+    integration/test_e2e.cc 
+    ${PROJECT_SOURCE_DIR}/src/e2e_test.cc
+)
+target_link_libraries(minirtc_e2e_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_e2e_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/common
+)
+add_test(NAME minirtc_e2e_test COMMAND minirtc_e2e_test)
+
+# ============================================================================
+# New Module Tests
+# ============================================================================
+
+# Stream/Track tests
+add_executable(minirtc_stream_track_test 
+    test_stream_track.cc
+)
+target_link_libraries(minirtc_stream_track_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_stream_track_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_stream_track_test COMMAND minirtc_stream_track_test)
+
+# JitterBuffer tests
+add_executable(minirtc_jitter_buffer_test 
+    test_jitter_buffer.cc
+)
+target_link_libraries(minirtc_jitter_buffer_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_jitter_buffer_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_jitter_buffer_test COMMAND minirtc_jitter_buffer_test)
+
+# H264Packer tests
+add_executable(minirtc_h264_packer_test 
+    test_h264_packer.cc
+)
+target_link_libraries(minirtc_h264_packer_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_h264_packer_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_h264_packer_test COMMAND minirtc_h264_packer_test)
+
+# E2E framework tests
+add_executable(minirtc_e2e_framework_test 
+    integration/test_e2e_framework.cc
+    ${PROJECT_SOURCE_DIR}/src/e2e_test.cc
+)
+target_link_libraries(minirtc_e2e_framework_test 
+    minirtc 
+    gtest
+    gtest_main
+    pthread
+)
+target_include_directories(minirtc_e2e_framework_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+add_test(NAME minirtc_e2e_framework_test COMMAND minirtc_e2e_framework_test)

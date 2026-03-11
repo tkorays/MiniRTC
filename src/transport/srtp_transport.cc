@@ -142,7 +142,7 @@ TransportError SRTPTransport::ReceiveRtcpPacket(
       buffer, buffer_size, received, from, timeout_ms);
 }
 
-void SRTPTransport::SetCallback(ITransportCallback* callback) {
+void SRTPTransport::SetCallback(std::shared_ptr<ITransportCallback> callback) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (rtp_transport_) {

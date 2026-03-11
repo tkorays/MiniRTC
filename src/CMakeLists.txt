@@ -19,6 +19,18 @@ add_library(minirtc_codec OBJECT
     packet_cache.cc
     nack_module.cc
     fec_module.cc
+
+    # Jitter Buffer module
+    jitter_buffer.cc
+    
+    # Stream/Track module
+    stream_track.cc
+    
+    # Codec module
+    codec/h264_packer.cc
+    
+    # E2E test module
+    e2e_test.cc
 )
 
 target_include_directories(minirtc_codec PUBLIC

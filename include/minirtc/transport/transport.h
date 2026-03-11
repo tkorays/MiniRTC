@@ -99,7 +99,7 @@ class ITransport {
                                             int timeout_ms) = 0;
 
   /// Set callback
-  virtual void SetCallback(ITransportCallback* callback) = 0;
+  virtual void SetCallback(std::shared_ptr<ITransportCallback> callback) = 0;
 
   /// Get local address
   virtual const NetworkAddress& GetLocalAddress() const = 0;

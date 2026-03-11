@@ -66,7 +66,7 @@ class RTPTransport : public IRTPTransport {
                                     int timeout_ms) override;
 
   /// Set callback
-  void SetCallback(ITransportCallback* callback) override;
+  void SetCallback(std::shared_ptr<ITransportCallback> callback) override;
 
   /// Get local address
   const NetworkAddress& GetLocalAddress() const override;
@@ -145,7 +145,7 @@ class RTPTransport : public IRTPTransport {
   mutable std::mutex mutex_;
 
   // Callbacks
-  IRtpTransportCallback* callback_ = nullptr;
+  std::weak_ptr<IRtpTransportCallback> callback_;
 
   // Network
   std::shared_ptr<INetworkInterface> rtp_socket_;

@@ -85,7 +85,7 @@ public:
     ErrorCode GetParam(VideoCaptureParam* param) const override;
 
     ErrorCode Initialize() override;
-    ErrorCode StartCapture(VideoCaptureObserver* observer) override;
+    ErrorCode StartCapture(std::weak_ptr<VideoCaptureObserver> observer) override;
     ErrorCode StopCapture() override;
     ErrorCode Release() override;
 
@@ -107,7 +107,7 @@ private:
     void GenerateAndPushFrame();
     void CaptureThreadLoop();
 
-    VideoCaptureObserver* observer_ = nullptr;
+    std::weak_ptr<VideoCaptureObserver> observer_;
     std::unique_ptr<VideoFrameGenerator> frame_generator_;
     VideoCaptureParam param_;
     std::string device_id_;

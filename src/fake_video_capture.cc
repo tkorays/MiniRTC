@@ -195,7 +195,7 @@ ErrorCode FakeVideoCapture::Initialize() {
     return ErrorCode::kOk;
 }
 
-ErrorCode FakeVideoCapture::StartCapture(VideoCaptureObserver* observer) {
+ErrorCode FakeVideoCapture::StartCapture(std::weak_ptr<VideoCaptureObserver> observer) {
     if (state_.load() == CaptureState::kCapturing) {
         return ErrorCode::kAlreadyStarted;
     }
@@ -238,7 +238,7 @@ ErrorCode FakeVideoCapture::Release() {
     }
 
     state_.store(CaptureState::kIdle);
-    observer_ = nullptr;
+    observer_.reset();
     return ErrorCode::kOk;
 }
 
@@ -305,7 +305,8 @@ ErrorCode FakeVideoCapture::SetSaturation(int value) {
 }
 
 void FakeVideoCapture::GenerateAndPushFrame() {
-    if (!frame_generator_ || !observer_) return;
+    auto observer = observer_.lock();
+    if (!observer || !frame_generator_) return;
 
     VideoFrame frame;
     frame_generator_->GenerateFrame(&frame);
@@ -322,7 +323,7 @@ void FakeVideoCapture::GenerateAndPushFrame() {
         stats_.total_bytes_captured += frame.GetBufferSize();
     }
 
-    observer_->OnFrameCaptured(frame);
+    observer->OnFrameCaptured(frame);
 }
 
 void FakeVideoCapture::CaptureThreadLoop() {

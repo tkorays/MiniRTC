@@ -62,7 +62,7 @@ class SRTPTransport : public ISRTPTransport {
                                      int timeout_ms) override;
 
   /// Set callback
-  void SetCallback(ITransportCallback* callback) override;
+  void SetCallback(std::shared_ptr<ITransportCallback> callback) override;
 
   /// Get local address
   const NetworkAddress& GetLocalAddress() const override;
