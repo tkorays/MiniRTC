@@ -155,19 +155,15 @@ TransportError RTPTransport::SendRtpPacket(std::shared_ptr<RtpPacket> packet) {
 
   // Loopback mode: put packet in local queue for receiving
   if (loopback_mode_.load()) {
-    fprintf(stderr, "[RTPTransport] SendRtpPacket: this=%p, loopback mode, queuing packet\n", this);
-    std::vector<uint8_t> data(packet->GetData(), packet->GetData() + packet->GetSize());
     NetworkAddress from;
     from.ip = "127.0.0.1";
     from.port = config_.local_addr.port;
     
     {
       std::lock_guard<std::mutex> lock(loopback_mutex_);
-      loopback_queue_.push_back({std::move(data), from});
-      fprintf(stderr, "[RTPTransport] SendRtpPacket: queued packet, queue size=%zu\n", loopback_queue_.size());
+      loopback_queue_.push_back({packet, from});
     }
     loopback_cv_.notify_one();
-    fprintf(stderr, "[RTPTransport] SendRtpPacket: notified, queue_size=%zu\n", loopback_queue_.size());
     
     UpdateSendStats(packet->GetSize());
     return TransportError::kOk;
