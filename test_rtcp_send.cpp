@@ -26,6 +26,8 @@ int main() {
     config.local_addr = NetworkAddress("127.0.0.1", 10000);
     config.remote_addr = NetworkAddress("127.0.0.1", 10001);
     config.ssrc = 0x12345678;
+    config.enable_rtcp = true;
+    config.rtcp_port = 10001;  // RTCP port
     config.loopback_mode = true;  // Use loopback mode
     
     auto error = transport->Open(config);
