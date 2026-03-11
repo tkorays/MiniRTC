@@ -1,6 +1,7 @@
 #include "minirtc/stream_track.h"
 #include <algorithm>
 #include <cstdint>
+#include <chrono>
 #include <mutex>
 #include <unordered_map>
 
@@ -20,6 +21,7 @@ public:
     bool Start() override {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!running_) {
+            start_time_ = std::chrono::steady_clock::now();
             running_ = true;
             return true;
         }
@@ -40,18 +42,71 @@ public:
         if (!packet) return;
         std::lock_guard<std::mutex> lock(mutex_);
         stats_.rtp_sent++;
-        // TODO: send to transport
+        stats_.bytes_sent += packet->GetPayloadSize();
+        // Update video stats if video track
+        if (kind_ == MediaKind::kVideo) {
+            // For simplicity, assume keyframe for now
+            // In real implementation, check marker bit and frame type
+        }
     }
 
     void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet) override {
         if (!packet) return;
         std::lock_guard<std::mutex> lock(mutex_);
         stats_.rtp_received++;
+        stats_.bytes_received += packet->GetPayloadSize();
     }
 
     TrackStats GetStats() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return stats_;
+    }
+
+    // Extended stats update methods
+    void RecordFrameEncoded(uint32_t encode_time_ms, bool is_keyframe = false) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stats_.frames_encoded++;
+        stats_.encode_time_ms = encode_time_ms;
+        if (is_keyframe) {
+            stats_.key_frames_encoded++;
+        }
+    }
+
+    void RecordFrameDecoded(uint32_t decode_time_ms) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stats_.frames_decoded++;
+        stats_.decode_time_ms = decode_time_ms;
+    }
+
+    void SetResolution(uint32_t width, uint32_t height) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stats_.frame_width = width;
+        stats_.frame_height = height;
+    }
+
+    void SetAudioInfo(uint32_t sample_rate, uint32_t ch) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stats_.sample_rate = sample_rate;
+        stats_.channels = ch;
+    }
+
+    void SetRtt(uint32_t rtt_ms) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stats_.round_trip_time_ms = rtt_ms;
+    }
+
+    void SetJitter(double jitter_ms) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stats_.jitter_ms = jitter_ms;
+    }
+
+    uint64_t GetSessionDurationMs() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (start_time_.time_since_epoch().count() == 0) {
+            return 0;
+        }
+        auto now = std::chrono::steady_clock::now();
+        return std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_).count();
     }
 
 private:
@@ -62,6 +117,7 @@ private:
     bool running_;
     mutable std::mutex mutex_;
     TrackStats stats_;
+    std::chrono::steady_clock::time_point start_time_;
 };
 
 // Stream implementation

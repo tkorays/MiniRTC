@@ -16,6 +16,7 @@
 #include "minirtc/capture_render.h"
 #include "minirtc/stream_track.h"
 #include "minirtc/transport/rtp_packet.h"
+#include "minirtc/stats.h"
 
 using namespace minirtc;
 
@@ -24,6 +25,102 @@ using namespace minirtc;
 // ============================================================================
 
 std::atomic<bool> g_running{false};
+
+// ============================================================================
+// Stats printing utility
+// ============================================================================
+
+void PrintStats(std::shared_ptr<IPeerConnection> pc) {
+    auto report = pc->GetStats();
+    if (!report) {
+        return;
+    }
+    
+    std::cout << "\n";
+    std::cout << "============================================\n";
+    std::cout << "       MiniRTC 通话统计报告\n";
+    std::cout << "============================================\n";
+    
+    // Session info
+    std::string state_str = "unknown";
+    if (report->peer_connection_stats) {
+        state_str = report->peer_connection_stats->state;
+    }
+    
+    double duration_sec = report->peer_connection_stats 
+        ? report->peer_connection_stats->session_duration_ms / 1000.0 
+        : 0.0;
+    std::cout << "会话状态: " << state_str << "\n";
+    std::cout << "持续时间: " << duration_sec << " 秒\n\n";
+    
+    // Audio stats
+    if (!report->audio_sender_stats.empty()) {
+        const auto& audio = report->audio_sender_stats[0];
+        std::cout << "----------------[ 音频发送 ]----------------\n";
+        std::cout << "  发送包数:    " << audio.packets_sent << "\n";
+        std::cout << "  发送字节:    " << (audio.bytes_sent / 1024.0 / 1024.0) << " MB\n";
+        std::cout << "  编码帧数:    " << audio.frames_encoded << "\n";
+        if (audio.encode_time_ms > 0) {
+            std::cout << "  编码耗时:    " << audio.encode_time_ms << " ms/帧\n";
+        }
+        std::cout << "  采样率:      " << audio.sample_rate << " Hz\n";
+        std::cout << "  声道数:      " << audio.channels << "\n";
+        if (audio.round_trip_time_ms > 0) {
+            std::cout << "  RTT:         " << audio.round_trip_time_ms << " ms\n";
+        }
+        std::cout << "\n";
+    }
+    
+    // Video stats
+    if (!report->video_sender_stats.empty()) {
+        const auto& video = report->video_sender_stats[0];
+        std::cout << "----------------[ 视频发送 ]----------------\n";
+        std::cout << "  发送包数:    " << video.packets_sent << "\n";
+        std::cout << "  发送字节:    " << (video.bytes_sent / 1024.0 / 1024.0) << " MB\n";
+        std::cout << "  编码帧数:    " << video.frames_encoded << "\n";
+        std::cout << "  I帧数:       " << video.key_frames_encoded << "\n";
+        if (video.encode_time_ms > 0) {
+            std::cout << "  编码耗时:    " << video.encode_time_ms << " ms/帧\n";
+        }
+        std::cout << "  分辨率:      " << video.frame_width << " x " << video.frame_height << "\n";
+        if (video.round_trip_time_ms > 0) {
+            std::cout << "  RTT:         " << video.round_trip_time_ms << " ms\n";
+        }
+        std::cout << "\n";
+    }
+    
+    // Transport stats
+    if (report->transport_stats) {
+        const auto& tp = *report->transport_stats;
+        std::cout << "----------------[ 传输层 ]-----------------\n";
+        std::cout << "  RTP发送包:   " << tp.packets_sent << "\n";
+        std::cout << "  RTP接收包:   " << tp.packets_received << "\n";
+        std::cout << "  RTP发送字节: " << (tp.bytes_sent / 1024.0 / 1024.0) << " MB\n";
+        std::cout << "  RTP接收字节: " << (tp.bytes_received / 1024.0 / 1024.0) << " MB\n";
+        
+        // Calculate bitrate
+        if (duration_sec > 0) {
+            double send_bps = (tp.bytes_sent * 8.0) / duration_sec / 1000.0;  // kbps
+            double recv_bps = (tp.bytes_received * 8.0) / duration_sec / 1000.0;  // kbps
+            std::cout << "  发送码率:    " << send_bps << " kbps\n";
+            std::cout << "  接收码率:    " << recv_bps << " kbps\n";
+        }
+        std::cout << "\n";
+    }
+    
+    // Packet loss
+    if (report->transport_stats) {
+        const auto& tp = *report->transport_stats;
+        uint64_t total_packets = tp.packets_sent + tp.packets_received;
+        if (total_packets > 0) {
+            double loss_rate = 100.0 * (double)tp.packets_received / total_packets;
+            std::cout << "----------------[ 丢包率 ]-----------------\n";
+            std::cout << "  整体丢包率: " << (100.0 - loss_rate) << "%\n";
+        }
+    }
+    
+    std::cout << "============================================\n";
+}
 
 // ============================================================================
 // Signal handler
@@ -64,6 +161,10 @@ public:
             param.channels = 2;
             player_->SetParam(param);
         }
+        
+        // Set audio info for stats
+        stats_.sample_rate = 48000;
+        stats_.channels = 2;
     }
     
     ~AudioTrack() override {
@@ -112,12 +213,14 @@ public:
         if (!packet) return;
         std::lock_guard<std::mutex> lock(mutex_);
         stats_.rtp_sent++;
+        stats_.bytes_sent += packet->GetPayloadSize();
     }
     
     void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet) override {
         if (!packet) return;
         std::lock_guard<std::mutex> lock(mutex_);
         stats_.rtp_received++;
+        stats_.bytes_received += packet->GetPayloadSize();
     }
     
     TrackStats GetStats() const override {
@@ -186,6 +289,10 @@ public:
             param.output_height = 480;
             renderer_->Initialize(param);
         }
+        
+        // Set video info for stats
+        stats_.frame_width = 640;
+        stats_.frame_height = 480;
     }
     
     ~VideoTrack() override {
@@ -237,12 +344,14 @@ public:
         if (!packet) return;
         std::lock_guard<std::mutex> lock(mutex_);
         stats_.rtp_sent++;
+        stats_.bytes_sent += packet->GetPayloadSize();
     }
     
     void OnRtpPacketReceived(std::shared_ptr<RtpPacket> packet) override {
         if (!packet) return;
         std::lock_guard<std::mutex> lock(mutex_);
         stats_.rtp_received++;
+        stats_.bytes_received += packet->GetPayloadSize();
         
         // Render received frame
         if (renderer_ && running_) {
@@ -548,6 +657,16 @@ int main(int argc, char* argv[]) {
     g_running = false;
     
     pc->Stop();
+    
+    // Print stats before exit
+    PrintStats(pc);
+    
+    // For loopback mode, show sample stats if no real data was transferred
+    auto stats = pc->GetStats();
+    if (stats && stats->transport_stats && stats->transport_stats->packets_sent == 0) {
+        std::cout << "\n注意: 当前为本地Loopback模式，未进行实际网络传输。\n";
+        std::cout << "如需测试网络统计，请使用 -m caller/-m callee 模式。\n";
+    }
     
     // Wait for stats thread
     if (stats_thread.joinable()) {

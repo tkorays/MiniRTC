@@ -7,6 +7,7 @@
 #include <functional>
 #include "minirtc/stream_track.h"
 #include "minirtc/ice.h"
+#include "minirtc/stats.h"
 
 namespace minirtc {
 
@@ -77,6 +78,12 @@ public:
     
     // 获取状态
     virtual PeerConnectionState GetState() const = 0;
+    
+    // 获取统计报告
+    virtual std::unique_ptr<RTCStatsReport> GetStats() = 0;
+    
+    // 获取会话持续时间(毫秒)
+    virtual uint64_t GetSessionDurationMs() const = 0;
 };
 
 // 创建PeerConnection

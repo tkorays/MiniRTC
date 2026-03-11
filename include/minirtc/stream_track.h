@@ -11,10 +11,32 @@ namespace minirtc {
 // MediaKind
 enum class MediaKind { kAudio = 1, kVideo = 2 };
 
-// Track统计
+// Track统计 - 扩展为包含音视频详细信息
 struct TrackStats {
+    // Basic RTP stats
     uint64_t rtp_sent = 0;
     uint64_t rtp_received = 0;
+    uint64_t bytes_sent = 0;
+    uint64_t bytes_received = 0;
+    uint64_t packets_lost = 0;
+    
+    // Audio-specific stats (for audio tracks)
+    uint64_t frames_encoded = 0;
+    uint64_t frames_decoded = 0;
+    uint32_t encode_time_ms = 0;
+    uint32_t decode_time_ms = 0;
+    uint32_t sample_rate = 0;
+    uint32_t channels = 0;
+    
+    // Video-specific stats (for video tracks)
+    uint64_t key_frames_encoded = 0;
+    uint32_t frame_width = 0;
+    uint32_t frame_height = 0;
+    double frame_rate_sent = 0.0;
+    
+    // Jitter and RTT
+    double jitter_ms = 0.0;
+    uint32_t round_trip_time_ms = 0;
 };
 
 // Stream统计

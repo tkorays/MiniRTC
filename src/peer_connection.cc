@@ -31,6 +31,8 @@ public:
     bool AddIceCandidate(const IceCandidate& candidate) override;
     std::vector<IceCandidate> GetLocalCandidates() override;
     PeerConnectionState GetState() const override;
+    std::unique_ptr<RTCStatsReport> GetStats() override;
+    uint64_t GetSessionDurationMs() const override;
 
 private:
     void SetState(PeerConnectionState state);
@@ -56,6 +58,9 @@ private:
     
     // Tracks
     std::vector<std::shared_ptr<ITrack>> local_tracks_;
+    
+    // Session timing
+    std::chrono::steady_clock::time_point session_start_time_;
     
     // Mutex
     mutable std::mutex mutex_;
@@ -157,6 +162,9 @@ bool PeerConnection::Start() {
     
     SetState(PeerConnectionState::kConnecting);
     
+    // Record session start time
+    session_start_time_ = std::chrono::steady_clock::now();
+    
     // Start local tracks
     for (const auto& track : local_tracks_) {
         if (!track->Start()) {
@@ -222,6 +230,100 @@ std::vector<IceCandidate> PeerConnection::GetLocalCandidates() {
 
 PeerConnectionState PeerConnection::GetState() const {
     return state_.load();
+}
+
+std::unique_ptr<RTCStatsReport> PeerConnection::GetStats() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    auto report = std::make_unique<RTCStatsReport>();
+    report->timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    // Session duration
+    uint64_t duration_ms = 0;
+    if (session_start_time_.time_since_epoch().count() > 0) {
+        auto now = std::chrono::steady_clock::now();
+        duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - session_start_time_).count();
+    }
+    
+    // Peer connection stats
+    auto pc_stats = std::make_unique<PeerConnectionStats>();
+    pc_stats->timestamp_ms = report->timestamp_ms;
+    pc_stats->session_duration_ms = duration_ms;
+    
+    // Convert state to string
+    switch (state_.load()) {
+        case PeerConnectionState::kNew: pc_stats->state = "new"; break;
+        case PeerConnectionState::kConnecting: pc_stats->state = "connecting"; break;
+        case PeerConnectionState::kConnected: pc_stats->state = "connected"; break;
+        case PeerConnectionState::kDisconnected: pc_stats->state = "disconnected"; break;
+        case PeerConnectionState::kFailed: pc_stats->state = "failed"; break;
+        case PeerConnectionState::kClosed: pc_stats->state = "closed"; break;
+    }
+    report->peer_connection_stats = std::move(pc_stats);
+    
+    // Transport stats
+    auto transport_stats = std::make_unique<TransportStats>();
+    transport_stats->timestamp_ms = report->timestamp_ms;
+    transport_stats->transport_id = "default";
+    // Aggregate transport stats from tracks
+    for (const auto& track : local_tracks_) {
+        auto track_stats = track->GetStats();
+        transport_stats->packets_sent += track_stats.rtp_sent;
+        transport_stats->packets_received += track_stats.rtp_received;
+        transport_stats->bytes_sent += track_stats.bytes_sent;
+        transport_stats->bytes_received += track_stats.bytes_received;
+    }
+    report->transport_stats = std::move(transport_stats);
+    
+    // Track stats
+    for (const auto& track : local_tracks_) {
+        auto track_stats = track->GetStats();
+        
+        if (track->GetKind() == MediaKind::kAudio) {
+            AudioSenderStats audio_stats;
+            audio_stats.timestamp_ms = report->timestamp_ms;
+            audio_stats.track_id = track->GetId();
+            audio_stats.ssrc = track->GetSsrc();
+            audio_stats.packets_sent = track_stats.rtp_sent;
+            audio_stats.bytes_sent = track_stats.bytes_sent;
+            audio_stats.frames_encoded = track_stats.frames_encoded;
+            audio_stats.encode_time_ms = track_stats.encode_time_ms;
+            audio_stats.sample_rate = track_stats.sample_rate;
+            audio_stats.channels = track_stats.channels;
+            audio_stats.round_trip_time_ms = track_stats.round_trip_time_ms;
+            audio_stats.jitter_ms = track_stats.jitter_ms;
+            report->audio_sender_stats.push_back(audio_stats);
+        } else if (track->GetKind() == MediaKind::kVideo) {
+            VideoSenderStats video_stats;
+            video_stats.timestamp_ms = report->timestamp_ms;
+            video_stats.track_id = track->GetId();
+            video_stats.ssrc = track->GetSsrc();
+            video_stats.packets_sent = track_stats.rtp_sent;
+            video_stats.bytes_sent = track_stats.bytes_sent;
+            video_stats.frames_encoded = track_stats.frames_encoded;
+            video_stats.key_frames_encoded = track_stats.key_frames_encoded;
+            video_stats.encode_time_ms = track_stats.encode_time_ms;
+            video_stats.frame_width = track_stats.frame_width;
+            video_stats.frame_height = track_stats.frame_height;
+            video_stats.frame_rate_sent = track_stats.frame_rate_sent;
+            video_stats.round_trip_time_ms = track_stats.round_trip_time_ms;
+            report->video_sender_stats.push_back(video_stats);
+        }
+    }
+    
+    return report;
+}
+
+uint64_t PeerConnection::GetSessionDurationMs() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (session_start_time_.time_since_epoch().count() == 0) {
+        return 0;
+    }
+    auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - session_start_time_).count();
 }
 
 void PeerConnection::SetState(PeerConnectionState state) {
