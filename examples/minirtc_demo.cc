@@ -1300,11 +1300,19 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[5/5] 停止通话..." << std::endl;
     g_running = false;
     
+    // Close transport FIRST to wake up receive thread
+    if (g_rtp_transport) {
+        g_rtp_transport->Close();
+    }
+    
     pc->Stop();
     
-    // 停止RTP接收线程
+    // 停止RTP接收线程 (加超时避免卡住)
     if (rtp_recv_thread.joinable()) {
-        rtp_recv_thread.join();
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (rtp_recv_thread.joinable()) {
+            rtp_recv_thread.detach();  // 强制分离
+        }
     }
     
     // 停止UDP环回
@@ -1313,9 +1321,8 @@ int main(int argc, char* argv[]) {
         g_udp_loopback.reset();
     }
     
-    // 关闭RTP Transport
+    // Transport already closed above
     if (g_rtp_transport) {
-        g_rtp_transport->Close();
         g_rtp_transport.reset();
     }
     

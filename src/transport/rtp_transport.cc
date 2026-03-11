@@ -90,13 +90,16 @@ TransportError RTPTransport::Open(const TransportConfig& config) {
 }
 
 void RTPTransport::Close() {
-  StopReceiving();
-
-  // Wake up any threads waiting on loopback queue
-  // Set state to closed first so ReceiveRtpPacket returns immediately
-  state_.store(TransportState::kClosed);
+  // IMPORTANT: Wake up waiting threads BEFORE stopping receiving
+  // 1. First set loopback_mode_ to false and notify all
   loopback_mode_.store(false);
   loopback_cv_.notify_all();
+  
+  // 2. Stop receiving (this will also join the thread)
+  StopReceiving();
+  
+  // 3. Now close sockets and clean up
+  state_.store(TransportState::kClosed);
   
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -388,9 +391,14 @@ void RTPTransport::StartReceiving() {
 
 void RTPTransport::StopReceiving() {
   receiving_.store(false);
-
+  
+  // Wake up any waiting threads
+  loopback_cv_.notify_all();
+  
+  // Don't wait for thread - just detach it to avoid deadlock
+  // The thread will exit when receiving_ is false
   if (receive_thread_.joinable()) {
-    receive_thread_.join();
+    receive_thread_.detach();
   }
 }
 
