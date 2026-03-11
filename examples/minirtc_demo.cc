@@ -1259,11 +1259,12 @@ int main(int argc, char* argv[]) {
     // Wait for call to end
     std::cout << "\n>>> 通话中，按Enter结束通话 <<<\n" << std::endl;
     
-    // Print stats periodically
-    std::thread stats_thread([&pc, &enable_audio, &enable_video]() {
-        while (g_running) {
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            if (!g_running) break;
+    // 使用atomic flag来更精确地控制stats线程退出
+    std::atomic<bool> stats_thread_running{true};
+    std::thread stats_thread([&pc, &stats_thread_running]() {
+        while (stats_thread_running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if (!stats_thread_running.load()) break;
             
             std::cout << "[Stats] ";
             auto state = pc->GetState();
@@ -1304,6 +1305,9 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[5/5] 停止通话..." << std::endl;
     g_running = false;
     
+    // 先停止stats线程（使用atomic flag快速唤醒）
+    stats_thread_running.store(false);
+    
     // Close transport FIRST to wake up receive thread
     if (g_rtp_transport) {
         g_rtp_transport->Close();
@@ -1322,32 +1326,35 @@ int main(int argc, char* argv[]) {
         g_rtp_transport.reset();
     }
     
-    // Print stats before exit
-    PrintStats(pc);
-    
-    // 从track获取RTP统计
-    if (audio_track_ptr || video_track_ptr) {
-        std::cout << "---------[ Track统计 ]----------\n";
-        if (audio_track_ptr) {
-            auto audio_stats = audio_track_ptr->GetStats();
-            std::cout << "  Audio RTP发送: " << audio_stats.rtp_sent << " 包, " 
-                      << (audio_stats.bytes_sent / 1024.0) << " KB\n";
-            std::cout << "  Audio RTP接收: " << audio_stats.rtp_received << " 包, " 
-                      << (audio_stats.bytes_received / 1024.0) << " KB\n";
-        }
-        if (video_track_ptr) {
-            auto video_stats = video_track_ptr->GetStats();
-            std::cout << "  Video RTP发送: " << video_stats.rtp_sent << " 包, " 
-                      << (video_stats.bytes_sent / 1024.0) << " KB\n";
-            std::cout << "  Video RTP接收: " << video_stats.rtp_received << " 包, " 
-                      << (video_stats.bytes_received / 1024.0) << " KB\n";
-        }
-    }
-    
-    // Wait for stats thread
+    // Wait for stats thread (should exit quickly now)
     if (stats_thread.joinable()) {
         stats_thread.join();
     }
+    
+    // 直接从track获取RTP统计（避免通过PeerConnection->GetStats()获取到的0值问题）
+    std::cout << "---------[ RTP 统计 ]----------\n";
+    uint64_t total_rtp_sent = 0;
+    uint64_t total_rtp_recv = 0;
+    if (audio_track_ptr) {
+        auto audio_stats = audio_track_ptr->GetStats();
+        std::cout << "  Audio RTP发送: " << audio_stats.rtp_sent << " 包, " 
+                  << (audio_stats.bytes_sent / 1024.0) << " KB\n";
+        std::cout << "  Audio RTP接收: " << audio_stats.rtp_received << " 包, " 
+                  << (audio_stats.bytes_received / 1024.0) << " KB\n";
+        total_rtp_sent += audio_stats.rtp_sent;
+        total_rtp_recv += audio_stats.rtp_received;
+    }
+    if (video_track_ptr) {
+        auto video_stats = video_track_ptr->GetStats();
+        std::cout << "  Video RTP发送: " << video_stats.rtp_sent << " 包, " 
+                  << (video_stats.bytes_sent / 1024.0) << " KB\n";
+        std::cout << "  Video RTP接收: " << video_stats.rtp_received << " 包, " 
+                  << (video_stats.bytes_received / 1024.0) << " KB\n";
+        total_rtp_sent += video_stats.rtp_sent;
+        total_rtp_recv += video_stats.rtp_received;
+    }
+    std::cout << "  总计发送: " << total_rtp_sent << " 包\n";
+    std::cout << "  总计接收: " << total_rtp_recv << " 包\n";
     
     std::cout << "通话已结束.\n";
     
