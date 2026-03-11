@@ -46,6 +46,9 @@ add_library(minirtc_codec OBJECT
     
     # Memory Pool module
     memory_pool.cc
+
+    # Media Synchronizer module
+    media_synchronizer.cc
 )
 
 target_include_directories(minirtc_codec PUBLIC
