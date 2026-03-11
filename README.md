@@ -62,7 +62,7 @@ mkdir build && cd build
 ### 3. 配置构建
 
 ```bash
-cmake .. -DBUILD_TESTS=ON -DBUILD_EXAMPLES=OFF
+cmake .. -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
 ```
 
 构建选项：
@@ -74,6 +74,47 @@ cmake .. -DBUILD_TESTS=ON -DBUILD_EXAMPLES=OFF
 ```bash
 cmake --build . -j$(nproc)
 ```
+
+## Demo使用方法
+
+### 构建Demo
+
+```bash
+cmake .. -DBUILD_EXAMPLES=ON
+cmake --build . --target minirtc_demo
+```
+
+### 运行Demo
+
+```bash
+# Loopback模式 (本地音视频回环)
+./bin/minirtc_demo
+
+# 仅音频
+./bin/minirtc_demo --no-video
+
+# 仅视频
+./bin/minirtc_demo --no-audio
+
+# 指定分辨率
+./bin/minirtc_demo -w 1280 -h 720
+
+# 指定帧率
+./bin/minirtc_demo -f 60
+
+# 查看帮助
+./bin/minirtc_demo --help
+```
+
+Demo选项：
+- `-m, --mode MODE`：运行模式 (loopback, caller, callee)
+- `-v, --video`：启用视频
+- `-a, --audio`：启用音频
+- `-w, --width WIDTH`：视频宽度 (默认640)
+- `-h, --height HEIGHT`：视频高度 (默认480)
+- `-f, --fps FPS`：帧率 (默认30)
+- `--no-video`：禁用视频
+- `--no-audio`：禁用音频
 
 ### 5. 安装（可选）
 
