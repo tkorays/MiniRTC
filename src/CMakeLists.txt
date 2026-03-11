@@ -41,6 +41,9 @@ add_library(minirtc_codec OBJECT
     # ICE module
     ice.cc
     
+    # SDP module
+    sdp.cc
+    
     # PeerConnection module
     peer_connection.cc
     

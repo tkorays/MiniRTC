@@ -33,6 +33,8 @@
 #include "minirtc/stream_track.h"
 #include "minirtc/transport/rtp_packet.h"
 #include "minirtc/stats.h"
+#include "minirtc/sdp.h"
+#include "minirtc/ice.h"
 
 using namespace minirtc;
 
@@ -44,17 +46,24 @@ std::atomic<bool> g_running{false};
 
 // ============================================================================
 // UDP Loopback Manager - 真正的UDP本地环回 (使用原生socket)
+// 支持配置目标地址进行网络通话
 // ============================================================================
 
 class UdpLoopbackManager {
 public:
-    static constexpr uint16_t kSendPort = 10000;
-    static constexpr uint16_t kRecvPort = 10001;
+    static constexpr uint16_t kSendPort = 20000;  // Changed from 10000
+    static constexpr uint16_t kRecvPort = 20001;  // Changed from 10001
     static constexpr const char* kLoopbackAddr = "127.0.0.1";
 
-    UdpLoopbackManager() : send_fd_(-1), recv_fd_(-1), running_(false) {}
+    UdpLoopbackManager() : send_fd_(-1), recv_fd_(-1), running_(false), target_addr_("") {}
 
     ~UdpLoopbackManager() { Stop(); }
+
+    // 设置目标地址 (Caller模式使用)
+    void SetTargetAddress(const std::string& addr, uint16_t port) {
+        target_addr_ = addr;
+        target_port_ = port;
+    }
 
     bool Start() {
         if (running_) return true;
@@ -74,6 +83,10 @@ public:
             std::cerr << "Failed to create send socket" << std::endl;
             return false;
         }
+
+        // 设置SO_REUSEADDR
+        int reuse = 1;
+        setsockopt(send_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
         // 绑定发送端口
         struct sockaddr_in send_addr;
@@ -99,6 +112,9 @@ public:
             send_fd_ = -1;
             return false;
         }
+
+        // 设置SO_REUSEADDR
+        setsockopt(recv_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
         // 绑定接收端口
         struct sockaddr_in recv_addr;
@@ -184,8 +200,15 @@ public:
         struct sockaddr_in to_addr;
         std::memset(&to_addr, 0, sizeof(to_addr));
         to_addr.sin_family = AF_INET;
-        to_addr.sin_addr.s_addr = inet_addr(kLoopbackAddr);
-        to_addr.sin_port = htons(kRecvPort);
+        
+        // 如果设置了目标地址，使用目标地址，否则使用默认环回地址
+        if (!target_addr_.empty() && target_port_ > 0) {
+            to_addr.sin_addr.s_addr = inet_addr(target_addr_.c_str());
+            to_addr.sin_port = htons(target_port_);
+        } else {
+            to_addr.sin_addr.s_addr = inet_addr(kLoopbackAddr);
+            to_addr.sin_port = htons(kRecvPort);
+        }
         
         int sent = sendto(send_fd_, reinterpret_cast<const char*>(data), size, 0,
                           (struct sockaddr*)&to_addr, sizeof(to_addr));
@@ -234,6 +257,10 @@ private:
     std::thread recv_thread_;
     std::atomic<bool> running_;
     std::function<void(std::shared_ptr<RtpPacket>)> recv_callback_;
+    
+    // 目标地址 (Caller模式)
+    std::string target_addr_;
+    uint16_t target_port_ = 0;
 };
 
 // 全局UDP环回管理器
@@ -758,7 +785,17 @@ void print_usage(const char* program_name) {
               << "  " << program_name << "                    # Loopback模式 (音视频)\n"
               << "  " << program_name << " -m loopback        # 回环测试\n"
               << "  " << program_name << " --no-video         # 仅音频\n"
-              << "  " << program_name << " -a -v -m caller    # 作为呼叫方\n";
+              << "  " << program_name << " -m caller          # 作为Caller (呼叫方)\n"
+              << "  " << program_name << " -m callee          # 作为Callee (接听方)\n\n"
+              << "Caller/Callee模式说明:\n"
+              << "  1. 先启动Callee: " << program_name << " -m callee\n"
+              << "  2. Callee等待输入Caller的Offer SDP\n"
+              << "  3. 启动Caller: " << program_name << " -m caller\n"
+              << "  4. Caller生成Offer SDP，显示给用户\n"
+              << "  5. 用户手动复制Offer给Callee，粘贴\n"
+              << "  6. Callee生成Answer SDP，显示给用户\n"
+              << "  7. 用户复制Answer给Caller，粘贴\n"
+              << "  8. 双方开始通话\n";
 }
 
 // ============================================================================
@@ -901,16 +938,139 @@ int main(int argc, char* argv[]) {
     std::shared_ptr<AudioTrack> audio_track_ptr;
     std::shared_ptr<VideoTrack> video_track_ptr;
     
-    // 如果是loopback模式，启动UDP环回
-    if (mode == "loopback") {
-        std::cout << "[UDP] 启动UDP本地环回..." << std::endl;
-        g_udp_loopback = std::make_unique<UdpLoopbackManager>();
-        if (!g_udp_loopback->Start()) {
-            std::cerr << "Failed to start UDP loopback\n";
+    // 启动UDP管理器 (所有模式都需要)
+    std::cout << "[UDP] 启动UDP管理器..." << std::endl;
+    g_udp_loopback = std::make_unique<UdpLoopbackManager>();
+    if (!g_udp_loopback->Start()) {
+        std::cerr << "Failed to start UDP loopback\n";
+        return 1;
+    }
+    std::cout << "[UDP] UDP已启动 (发送端口: " << UdpLoopbackManager::kSendPort 
+              << ", 接收端口: " << UdpLoopbackManager::kRecvPort << ")" << std::endl;
+    
+    // Caller模式: 生成offer SDP并打印
+    if (mode == "caller") {
+        std::cout << "\n========== Caller 模式 ==========\n";
+        std::cout << "正在生成本地ICE候选...\n";
+        
+        // 获取本地ICE候选
+        auto ice_agent = CreateIceAgent();
+        StunConfig stun_config;
+        ice_agent->Initialize(stun_config);
+        auto local_candidates = ice_agent->GatherCandidates();
+        
+        // 打印本地候选
+        std::cout << "\n--- 本地ICE候选 ---\n";
+        for (const auto& candidate : local_candidates) {
+            std::cout << "  " << candidate.host_addr << ":" << candidate.port << " ("
+                      << (candidate.type == IceCandidateType::kHost ? "host" : "other") << ")\n";
+        }
+        
+        // 生成offer SDP
+        std::string offer_sdp = SdpParser::GenerateOffer(
+            local_candidates, enable_audio, enable_video,
+            UdpLoopbackManager::kSendPort, UdpLoopbackManager::kSendPort + 2);
+        
+        std::cout << "\n========== OFFER SDP ==========\n";
+        std::cout << "请将此SDP复制给Callee:\n\n";
+        std::cout << offer_sdp;
+        std::cout << "========== END SDP ==========\n\n";
+        
+        // 等待用户输入Answer SDP
+        std::cout << "请输入Callee发来的Answer SDP (按Ctrl+D结束):\n";
+        std::string answer_sdp;
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            answer_sdp += line + "\n";
+        }
+        
+        // 解析Answer SDP
+        SessionDescription answer_desc;
+        if (!SdpParser::Parse(answer_sdp, &answer_desc)) {
+            std::cerr << "Failed to parse Answer SDP\n";
             return 1;
         }
-        std::cout << "[UDP] UDP环回已启动 (发送端口: " << UdpLoopbackManager::kSendPort 
-                  << ", 接收端口: " << UdpLoopbackManager::kRecvPort << ")" << std::endl;
+        
+        std::cout << "Answer SDP解析成功!\n";
+        
+        // 从Answer SDP中获取远端候选并设置目标地址
+        // 简单处理：使用第一个candidate的地址作为目标
+        if (!answer_desc.ice_candidates.empty()) {
+            const auto& candidate = answer_desc.ice_candidates[0];
+            g_udp_loopback->SetTargetAddress(candidate.host_addr, candidate.port);
+            std::cout << "已设置目标地址: " << candidate.host_addr << ":" << candidate.port << "\n";
+        }
+        
+        // 添加远端ICE候选
+        for (const auto& candidate : answer_desc.ice_candidates) {
+            pc->AddIceCandidate(candidate);
+        }
+        
+        // 打印Answer中的连接地址
+        std::cout << "远端连接地址: " << answer_desc.connection_addr << "\n";
+    }
+    
+    // Callee模式: 等待输入offer SDP并生成answer SDP
+    if (mode == "callee") {
+        std::cout << "\n========== Callee 模式 ==========\n";
+        
+        // 等待用户输入Offer SDP
+        std::cout << "请输入Caller发来的Offer SDP (按Ctrl+D结束):\n";
+        std::string offer_sdp;
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            offer_sdp += line + "\n";
+        }
+        
+        // 解析Offer SDP
+        SessionDescription offer_desc;
+        if (!SdpParser::Parse(offer_sdp, &offer_desc)) {
+            std::cerr << "Failed to parse Offer SDP\n";
+            return 1;
+        }
+        
+        std::cout << "Offer SDP解析成功!\n";
+        std::cout << "远端连接地址: " << offer_desc.connection_addr << "\n";
+        
+        // 获取本地ICE候选
+        std::cout << "正在生成本地ICE候选...\n";
+        auto ice_agent = CreateIceAgent();
+        StunConfig stun_config;
+        ice_agent->Initialize(stun_config);
+        auto local_candidates = ice_agent->GatherCandidates();
+        
+        // 打印本地候选
+        std::cout << "\n--- 本地ICE候选 ---\n";
+        for (const auto& candidate : local_candidates) {
+            std::cout << "  " << candidate.host_addr << ":" << candidate.port << " ("
+                      << (candidate.type == IceCandidateType::kHost ? "host" : "other") << ")\n";
+        }
+        
+        // 生成answer SDP
+        std::string answer_sdp = SdpParser::GenerateAnswer(
+            offer_desc, local_candidates, enable_audio, enable_video,
+            UdpLoopbackManager::kRecvPort, UdpLoopbackManager::kRecvPort + 2);
+        
+        std::cout << "\n========== ANSWER SDP ==========\n";
+        std::cout << "请将此SDP复制给Caller:\n\n";
+        std::cout << answer_sdp;
+        std::cout << "========== END SDP ==========\n\n";
+        
+        // 添加远端ICE候选
+        for (const auto& candidate : offer_desc.ice_candidates) {
+            pc->AddIceCandidate(candidate);
+        }
+        
+        // 设置目标地址为远端地址 (从offer中获取)
+        if (!offer_desc.ice_candidates.empty()) {
+            const auto& candidate = offer_desc.ice_candidates[0];
+            g_udp_loopback->SetTargetAddress(candidate.host_addr, candidate.port);
+            std::cout << "已设置目标地址: " << candidate.host_addr << ":" << candidate.port << "\n";
+        }
+        
+        // 等待用户确认复制完成
+        std::cout << "请按Enter键开始通话...";
+        std::cin.get();
     }
     
     if (enable_audio) {
@@ -945,8 +1105,8 @@ int main(int argc, char* argv[]) {
         pc->AddTrack(video_track_ptr);
     }
     
-    // 设置UDP接收回调
-    if (mode == "loopback" && g_udp_loopback) {
+    // 设置UDP接收回调 (所有模式都需要)
+    if (g_udp_loopback) {
         g_udp_loopback->SetRecvCallback([&audio_track_ptr, &video_track_ptr](std::shared_ptr<RtpPacket> packet) {
             if (!packet) return;
             
@@ -995,7 +1155,7 @@ int main(int argc, char* argv[]) {
         }
     });
     
-    // Wait for user input or auto-timeout in loopback mode
+    // 等待通话结束
     if (mode == "loopback") {
         // 在loopback模式下，等待5秒让RTP包传输
         std::cout << "\n>>> Loopback模式运行5秒后自动结束 <<<\n" << std::endl;
@@ -1005,7 +1165,11 @@ int main(int argc, char* argv[]) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             std::cout << "[Loopback] 运行中... " << (i+1) << "/5秒" << std::endl;
         }
-    } else {
+    } else if (mode == "caller") {
+        std::cout << "\n>>> Caller模式通话中，按Enter结束通话 <<<\n" << std::endl;
+        std::cin.get();
+    } else if (mode == "callee") {
+        std::cout << "\n>>> Callee模式通话中，按Enter结束通话 <<<\n" << std::endl;
         std::cin.get();
     }
     
@@ -1024,9 +1188,9 @@ int main(int argc, char* argv[]) {
     // Print stats before exit
     PrintStats(pc);
     
-    // 在loopback模式下，从track获取额外统计
-    if (mode == "loopback" && (audio_track_ptr || video_track_ptr)) {
-        std::cout << "---------[ Loopback Track统计 ]----------\n";
+    // 从track获取RTP统计
+    if (audio_track_ptr || video_track_ptr) {
+        std::cout << "---------[ Track统计 ]----------\n";
         if (audio_track_ptr) {
             auto audio_stats = audio_track_ptr->GetStats();
             std::cout << "  Audio RTP发送: " << audio_stats.rtp_sent << " 包, " 

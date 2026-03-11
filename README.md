@@ -116,6 +116,42 @@ Demo选项：
 - `--no-video`：禁用视频
 - `--no-audio`：禁用音频
 
+### Caller/Callee模式 (网络通话)
+
+Caller/Callee模式支持两台机器之间的网络通话，通过手动复制粘贴SDP进行信令交换。
+
+```bash
+# 1. 在Callee机器上启动（接听方）
+./bin/minirtc_demo -m callee
+
+# 2. 在Caller机器上启动（呼叫方）
+./bin/minirtc_demo -m caller
+```
+
+#### 通话流程：
+
+1. **启动Callee**：
+   ```bash
+   ./bin/minirtc_demo -m callee --no-video
+   ```
+   - Callee会等待输入Caller发来的Offer SDP
+
+2. **启动Caller**：
+   ```bash
+   ./bin/minirtc_demo -m caller --no-video
+   ```
+   - Caller会生成Offer SDP并显示在屏幕上
+
+3. **复制SDP**：
+   - 用户手动将Caller生成的Offer SDP复制并粘贴到Callee终端
+   - Callee解析后会生成Answer SDP并显示
+
+4. **复制Answer**：
+   - 用户将Callee生成的Answer SDP复制并粘贴回Caller终端
+
+5. **开始通话**：
+   - 双方按Enter开始通话
+
 ### 5. 安装（可选）
 
 ```bash
