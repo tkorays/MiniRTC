@@ -1477,8 +1477,8 @@ int main(int argc, char* argv[]) {
             }
             
             // 打印带宽估计结果
-            if (g_bandwidth_estimator) {
-                auto bwe_result = g_bandwidth_estimator->GetResult();
+            if (bwe_estimator) {
+                auto bwe_result = bwe_estimator->GetResult();
                 std::cout << " | [BWE] 估计码率: " << bwe_result.bitrate_bps / 1000 << " kbps"
                           << " | 目标码率: " << bwe_result.target_bitrate_bps / 1000 << " kbps"
                           << " | 丢包率: " << (bwe_result.loss_rate * 100) << "%"
