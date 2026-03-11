@@ -153,6 +153,7 @@ class RTPTransport : public IRTPTransport {
 
   // Callbacks
   std::weak_ptr<IRtpTransportCallback> callback_;
+  std::weak_ptr<ITransportCallback> transport_callback_;
 
   // Network
   std::shared_ptr<INetworkInterface> rtp_socket_;

@@ -1284,6 +1284,15 @@ int main(int argc, char* argv[]) {
         callback->audio_track = audio_track_ptr;
         callback->video_track = video_track_ptr;
         rtp_callback = callback;
+        
+        std::cout << "[RTP] Callback created, trying to cast..." << std::endl;
+        auto rtp_callback_cast = std::dynamic_pointer_cast<IRtpTransportCallback>(rtp_callback);
+        if (rtp_callback_cast) {
+            std::cout << "[RTP] Callback cast successful!" << std::endl;
+        } else {
+            std::cout << "[RTP] Callback cast FAILED!" << std::endl;
+        }
+        
         g_rtp_transport->SetCallback(rtp_callback);
         
         std::cout << "[RTP] Setting callback and starting receiving..." << std::endl;

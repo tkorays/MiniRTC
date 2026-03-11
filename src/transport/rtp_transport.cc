@@ -304,17 +304,12 @@ TransportError RTPTransport::ReceiveRtcpPacket(
 }
 
 void RTPTransport::SetCallback(std::shared_ptr<ITransportCallback> callback) {
-  // Store the callback - try IRtpTransportCallback first, fall back to ITransportCallback
+  // Store both the IRtpTransportCallback (if available) and the original ITransportCallback
   auto rtp_callback = std::dynamic_pointer_cast<IRtpTransportCallback>(callback);
   if (rtp_callback) {
     callback_ = rtp_callback;
-  } else {
-    // For callbacks that don't implement IRtpTransportCallback,
-    // we need to store ITransportCallback separately
-    // Use a wrapper to make it compatible
-    callback_ = std::shared_ptr<IRtpTransportCallback>();
   }
-  // Store the original callback for direct calls
+  // Always store the original callback for fallback
   transport_callback_ = callback;
 }
 
@@ -444,7 +439,12 @@ void RTPTransport::ReceiveLoop() {
     // Use non-blocking receive with timeout
     TransportError error = ReceiveRtpPacket(&packet, &from, 100);
 
+    // Try IRtpTransportCallback first, fall back to ITransportCallback
     auto callback = callback_.lock();
+    if (!callback) {
+      callback = std::dynamic_pointer_cast<IRtpTransportCallback>(transport_callback_.lock());
+    }
+    
     if (error == TransportError::kOk && packet && callback) {
       // Dispatch to callback
       callback->OnRtpPacketReceived(packet, from);

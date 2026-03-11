@@ -423,4 +423,40 @@ TestResult E2ETest::TestLoopback(int duration_sec) {
     return result;
 }
 
+void E2ETest::InitializeRtcp() {
+    // Create RTCP module for transport A
+    rtcp_module_a_ = std::make_unique<RTCPModule>();
+    
+    // Configure RTCP
+    RtcpConfig rtcp_config;
+    rtcp_config.enable = true;
+    rtcp_config.enable_sr = true;
+    rtcp_config.enable_rr = true;
+    rtcp_config.enable_sdes = true;
+    rtcp_config.interval_sr_ms = 5000;  // Send SR every 5 seconds
+    rtcp_config.interval_rr_ms = 5000;
+    rtcp_config.cname = "minirtc_a@local";
+    rtcp_config.name = "MiniRTC A";
+    
+    // Initialize with local and remote SSRC
+    rtcp_module_a_->Initialize(kSsrcA, kSsrcB, rtcp_config);
+    
+    // Bind to transport A
+    rtcp_module_a_->BindTransport(transport_a_.get());
+    
+    // Create RTCP module for transport B
+    rtcp_module_b_ = std::make_unique<RTCPModule>();
+    
+    // Configure RTCP for B
+    rtcp_config.cname = "minirtc_b@local";
+    rtcp_config.name = "MiniRTC B";
+    
+    rtcp_module_b_->Initialize(kSsrcB, kSsrcA, rtcp_config);
+    
+    // Bind to transport B
+    rtcp_module_b_->BindTransport(transport_b_.get());
+    
+    std::cout << "[E2ETest] RTCP modules initialized" << std::endl;
+}
+
 }  // namespace minirtc
