@@ -41,6 +41,9 @@ add_library(minirtc_codec OBJECT
     # ICE module
     ice.cc
     
+    # PeerConnection module
+    peer_connection.cc
+    
     # Memory Pool module
     memory_pool.cc
 )
