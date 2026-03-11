@@ -92,6 +92,11 @@ int main() {
     std::cout << "Manual SendSr() call..." << std::endl;
     rtcp_module->SendSr();
     
+    // Try sending directly to check
+    uint8_t test_data[20] = {0x80, 0xC8, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00};  // SR packet header
+    auto send_error = transport_a->SendRtcpPacket(test_data, sizeof(test_data));
+    std::cout << "Direct SendRtcpPacket result: " << static_cast<int>(send_error) << std::endl;
+    
     // Get stats
     auto stats = rtcp_module->GetStats();
     std::cout << "\nRTCP Stats:" << std::endl;
