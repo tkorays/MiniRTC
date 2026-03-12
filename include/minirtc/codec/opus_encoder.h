@@ -30,6 +30,12 @@ typedef uint32_t opus_uint32;
 
 namespace minirtc {
 
+// Forward declare opus types to avoid naming conflict
+#ifdef MINIRTC_USE_OPUS
+struct OpusEncoder;
+struct OpusDecoder;
+#endif
+
 /**
  * @brief Opus audio encoder
  * 
@@ -96,7 +102,7 @@ class OpusEncoder : public IEncoder {
   CodecError DestroyEncoder();
   CodecError UpdateEncoderSettings();
   
-  OpusEncoder* encoder_ = nullptr;
+  ::OpusEncoder* encoder_ = nullptr;
   AudioEncoderConfig config_;
   CodecState state_ = CodecState::kUninitialized;
   CodecStats stats_;

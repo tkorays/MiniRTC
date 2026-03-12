@@ -15,9 +15,11 @@
 #endif
 
 #ifdef MINIRTC_USE_FFMPEG
+extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
+}
 #endif
 
 namespace minirtc {
@@ -97,7 +99,7 @@ class H264Encoder : public IEncoder {
   
 #ifdef MINIRTC_USE_H264
   ISVCEncoder* encoder_ = nullptr;
-  SEncParamBase enc_params_;
+  SEncParamExt enc_params_;
   SFrameBSInfo enc_output_info_;
   SSourcePicture src_pic_;
 #endif

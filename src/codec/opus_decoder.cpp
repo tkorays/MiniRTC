@@ -139,7 +139,7 @@ CodecError OpusDecoder::Decode(std::shared_ptr<EncodedFrame> input,
   info.sample_rate = output_sample_rate;
   info.channels = output_channels;
   info.samples_per_channel = decoded_samples;
-  info.format = AudioSampleFormat::kS16;
+  info.format = AudioSampleFormat::kInt16;
   info.timestamp_us = input->GetTimestampUs();
   decoded->SetAudioInfo(info);
   decoded->SetData(reinterpret_cast<const uint8_t*>(output_buffer_.data()),

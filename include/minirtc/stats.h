@@ -12,11 +12,14 @@ namespace minirtc {
 // Basic Types
 // ============================================================================
 
-// Media type enum
+// Media type enum - only define if not already defined (to avoid conflict with codec_types.h)
+#ifndef MINIRTC_MEDIATYPE_DEFINED
+#define MINIRTC_MEDIATYPE_DEFINED
 enum class MediaType {
     kAudio,
     kVideo
 };
+#endif
 
 // Stats type enum
 enum class RTCStatsType {

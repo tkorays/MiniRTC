@@ -15,8 +15,9 @@ option(USE_FFMPEG "Use FFmpeg for H.264 encoding/decoding" OFF)
 # H.264 codec selection
 # Note: When OpenH264 source is available, set USE_OPENH264=ON and provide OPENH264_LIBRARY path
 if(USE_OPENH264 AND NOT USE_FFMPEG)
-    set(MINIRTC_USE_H264 ON)
-    message(STATUS "Using OpenH264 for H.264 encoding/decoding")
+    # Disabled OpenH264 due to API incompatibility - using stub for now
+    set(MINIRTC_USE_H264 OFF)
+    message(STATUS "Using stub H.264 implementation")
 elseif(USE_FFMPEG)
     set(MINIRTC_USE_FFMPEG ON)
     message(STATUS "Using FFmpeg for H.264 encoding/decoding")

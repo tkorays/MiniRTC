@@ -31,6 +31,14 @@ add_library(minirtc_codec OBJECT
     
     # Codec module
     codec/h264_packer.cc
+    codec/codec_factory.cpp
+    codec/opus_encoder.cpp
+    codec/opus_decoder.cpp
+    codec/h264_encoder.cpp
+    codec/h264_decoder.cpp
+    codec/encoder_config.cpp
+    codec/decoder_config.cpp
+    codec/encoder_frame.cpp
     
     # E2E test module
     e2e_test.cc
@@ -73,12 +81,12 @@ endif()
 
 # OpenH264 support - use pre-built library if available
 # Set OPENH264_LIBRARY and OPENH264_INCLUDE_DIR in parent CMakeLists.txt
-if(MINIRTC_USE_H264 AND EXISTS ${OPENH264_LIBRARY})
+if(USE_OPENH264 AND EXISTS ${OPENH264_LIBRARY})
     message(STATUS "OpenH264 library found: ${OPENH264_LIBRARY}")
     target_compile_definitions(minirtc_codec PUBLIC MINIRTC_USE_H264=1)
     target_include_directories(minirtc_codec PUBLIC ${OPENH264_INCLUDE_DIR})
     target_link_libraries(minirtc_codec PUBLIC ${OPENH264_LIBRARY})
-elseif(MINIRTC_USE_H264)
+elseif(USE_OPENH264)
     message(WARNING "OpenH264 library not found at ${OPENH264_LIBRARY}, using stub implementation")
 endif()
 

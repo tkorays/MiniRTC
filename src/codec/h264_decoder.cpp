@@ -429,8 +429,12 @@ bool H264Decoder::NeedsDecoderReset() const {
 int H264Decoder::GetDecodingPictureCount() const {
 #ifdef MINIRTC_USE_FFMPEG
   if (context_) {
-    return context_->frame_number;
+    return context_->frame_num;
   }
+#endif
+#ifdef MINIRTC_USE_H264
+  // OpenH264 doesn't expose frame count directly
+  return 0;
 #endif
   return 0;
 }

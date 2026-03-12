@@ -343,9 +343,7 @@ void H264Encoder::RequestKeyframe() {
 #endif
 
 #ifdef MINIRTC_USE_FFMPEG
-    if (context_) {
-      context_->internal_->opts->flags &= ~AV_CODEC_FLAG2_NOT_B_FRAME;
-    }
+    // FFmpeg-specific reinit if needed
 #endif
   }
 }
@@ -356,8 +354,9 @@ CodecError H264Encoder::SetBitrate(uint32_t target_kbps, uint32_t max_kbps) {
   
 #ifdef MINIRTC_USE_H264
   if (encoder_) {
-    SEncParamBase params;
+    SEncParamExt params;
     memset(&params, 0, sizeof(params));
+    params.iUsageType = CAMERA_VIDEO_REAL_TIME;
     params.iTargetBitrate = target_kbps * 1000;
     params.iMaxBitrate = max_kbps * 1000;
     encoder_->SetOption(ENCODER_OPTION_PARAM, &params);
@@ -380,8 +379,9 @@ CodecError H264Encoder::SetFramerate(uint32_t fps) {
   
 #ifdef MINIRTC_USE_H264
   if (encoder_) {
-    SEncParamBase params;
+    SEncParamExt params;
     memset(&params, 0, sizeof(params));
+    params.iUsageType = CAMERA_VIDEO_REAL_TIME;
     params.fMaxFrameRate = static_cast<float>(fps);
     encoder_->SetOption(ENCODER_OPTION_PARAM, &params);
   }
@@ -493,11 +493,11 @@ CodecError H264Encoder::CreateEncoder() {
   
   // Profile
   if (config_.profile == "baseline") {
-    enc_params_.eProfile = PROFILE_SCALABLE_BASELINE;
+    enc_params_.eProfile = PRO_BASELINE;
   } else if (config_.profile == "main") {
-    enc_params_.eProfile = PROFILE_SCALABLE_MAIN;
+    enc_params_.eProfile = PRO_MAIN;
   } else {
-    enc_params_.eProfile = PROFILE_SCALABLE_HIGH;
+    enc_params_.eProfile = PRO_HIGH;
   }
   
   // Entropy mode
@@ -556,19 +556,20 @@ CodecError H264Encoder::CreateEncoder() {
   context_->gop_size = config_.keyframe_interval;
   context_->max_b_frames = config_.max_bframes;
   
+  // Pixel format - required for H.264
+  context_->pix_fmt = AV_PIX_FMT_YUV420P;
+  
   // Profile
   if (config_.profile == "baseline") {
-    context_->profile = FF_PROFILE_H264_BASELINE;
+    context_->profile = AV_PROFILE_H264_BASELINE;
   } else if (config_.profile == "main") {
-    context_->profile = FF_PROFILE_H264_MAIN;
+    context_->profile = AV_PROFILE_H264_MAIN;
   } else {
-    context_->profile = FF_PROFILE_H264_HIGH;
+    context_->profile = AV_PROFILE_H264_HIGH;
   }
   
-  // Entropy mode
-  if (config_.entropy_mode == "cavlc") {
-    context_->coder_type = FF_CODER_TYPE_VLC;
-  }
+  // Entropy mode - removed in newer FFmpeg, use profile-based default
+  // Cavlc is default for baseline, cabac for main/high
   
   // Threading
   if (config_.thread_count > 0) {
@@ -641,7 +642,7 @@ CodecError H264Encoder::UpdateEncoderSettings() {
   }
   
   // Update bitrate settings
-  SEncParamBase params;
+  SEncParamExt params;
   memset(&params, 0, sizeof(params));
   encoder_->GetOption(ENCODER_OPTION_PARAM, &params);
   

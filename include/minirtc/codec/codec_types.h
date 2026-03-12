@@ -35,12 +35,15 @@ enum class CodecType {
   kAV1 = 104,
 };
 
-/// Media type enumeration
+/// Media type enumeration - only define if not already defined
+#ifndef MINIRTC_MEDIATYPE_DEFINED
+#define MINIRTC_MEDIATYPE_DEFINED
 enum class MediaType {
   kNone = 0,
   kAudio = 1,
   kVideo = 2,
 };
+#endif
 
 /// Codec state enumeration
 enum class CodecState {

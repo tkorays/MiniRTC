@@ -100,7 +100,7 @@ class OpusDecoder : public IDecoder {
   CodecError DestroyDecoder();
   
   AudioDecoderConfig config_;
-  OpusDecoder* decoder_ = nullptr;
+  ::OpusDecoder* decoder_ = nullptr;
   CodecState state_ = CodecState::kUninitialized;
   CodecStats stats_;
   ICodecCallback* callback_ = nullptr;
