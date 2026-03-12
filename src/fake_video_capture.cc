@@ -210,6 +210,9 @@ ErrorCode FakeVideoCapture::StartCapture(std::weak_ptr<VideoCaptureObserver> obs
 
     start_time_us_ = duration_cast<microseconds>(
         system_clock::now().time_since_epoch()).count();
+    
+    // Reset frame index for monotonic PTS
+    frame_index_.store(0);
 
     capture_thread_ = std::thread(&FakeVideoCapture::CaptureThreadLoop, this);
 
@@ -263,6 +266,7 @@ ErrorCode FakeVideoCapture::ResetStats() {
     stats_ = VideoCaptureStats();
     seq_num_.store(0);
     timestamp_rtp_.store(0);
+    frame_index_.store(0);
     return ErrorCode::kOk;
 }
 
@@ -311,8 +315,11 @@ void FakeVideoCapture::GenerateAndPushFrame() {
     VideoFrame frame;
     frame_generator_->GenerateFrame(&frame);
 
-    frame.timestamp_us = duration_cast<microseconds>(
-        system_clock::now().time_since_epoch()).count();
+    // Use monotonic frame index for PTS calculation
+    // This ensures strictly increasing PTS for H.264 encoder
+    int64_t frame_idx = frame_index_.fetch_add(1);
+    int64_t frame_interval_us = 1000000LL / param_.target_fps;
+    frame.timestamp_us = frame_idx * frame_interval_us;
     frame.timestamp_rtp = timestamp_rtp_.fetch_add(3000);
     frame.seq_num = seq_num_.fetch_add(1);
     frame.keyframe = true;

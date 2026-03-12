@@ -73,6 +73,7 @@ RawFrame::Ptr RawFrameImpl::Clone() const {
 void RawFrameImpl::SetVideoInfo(const VideoFrameInfo& info) {
   media_type_ = MediaType::kVideo;
   video_info_ = info;
+  timestamp_us_ = info.timestamp_us;  // Sync timestamp_us_ with video_info_
 }
 
 void RawFrameImpl::SetAudioInfo(const AudioFrameInfo& info) {

@@ -175,7 +175,16 @@ CodecError H264Encoder::Encode(std::shared_ptr<RawFrame> input,
   // Set frame data
   frame_->width = info.width;
   frame_->height = info.height;
-  frame_->pts = input->GetTimestampUs();
+  
+  // Convert microsecond timestamp to PTS based on time_base
+  // For 30fps, each frame is 33333.33 us, so PTS = timestamp_us / 33333
+  // Using integer division to ensure strictly monotonic PTS
+  // (timestamp_us is already monotonically increasing from FakeVideoCapture)
+  int64_t timestamp_us = static_cast<int64_t>(input->GetTimestampUs());
+  int64_t frame_duration_us = 1000000 / config_.framerate;
+  frame_->pts = timestamp_us / frame_duration_us;
+  
+  // For I420 format
   
   // For I420 format
   const uint8_t* y_data = input->GetPlaneData(0);

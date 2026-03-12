@@ -125,6 +125,7 @@ private:
     std::atomic<uint16_t> seq_num_{0};
     std::atomic<uint32_t> timestamp_rtp_{0};
     std::atomic<int64_t> start_time_us_{0};
+    std::atomic<int64_t> frame_index_{0};  // Monotonic frame index for PTS
 };
 
 }  // namespace fake
